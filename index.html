@@ -25,6 +25,14 @@
   #login-panel[hidden] { display:none; }
   #login-panel input { border:1px solid #cbd5e1; border-radius:8px; padding:.4rem .6rem; }
   #login-error { color:#dc2626; }
+  .account-panel { padding:.6rem .75rem; background:#fff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
+  .account-panel[hidden] { display:none; }
+  .account-panel h2 { font-size:1rem; margin:.2rem 0 .5rem; }
+  .account-panel input, .account-panel select { border:1px solid #cbd5e1; border-radius:8px; padding:.4rem .6rem; }
+  .account-row { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.4rem 0; border-top:1px solid #f1f5f9; }
+  .account-row .who { min-width:160px; }
+  .msg-ok { color:#059669; }
+  .msg-err { color:#dc2626; }
   .toolbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.5rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
   .group { display:flex; gap:.3rem; align-items:center; padding-right:.5rem; border-right:1px solid #e2e8f0; }
   .group:last-child { border-right:none; }
@@ -73,7 +81,42 @@
     <button type="submit">Masuk</button>
     <span id="login-error" role="alert"></span>
   </form>
-  <span style="color:#475569">Akun pemilik dibuat lewat skrip di server, tidak ada daftar publik. Fase ini baru login saja; coretan masih tersimpan di browser.</span>
+  <span style="color:#475569">Tidak ada daftar publik. Akun pertama dibuat lewat skrip di server; setelah login sebagai admin, akun baru bisa ditambah lewat panel Kelola Akun di bawah. Coretan masih tersimpan di browser.</span>
+</div>
+
+<div id="my-account-panel" class="account-panel" hidden>
+  <h2>🔑 Akun saya</h2>
+  <p id="my-account-info" style="margin:.2rem 0 .5rem"></p>
+  <form id="my-password-form" style="display:flex; flex-wrap:wrap; gap:.4rem; align-items:center">
+    <label for="my-current-password">Sandi lama</label>
+    <input id="my-current-password" type="password" autocomplete="current-password" required>
+    <label for="my-new-password">Sandi baru (min. 6 karakter)</label>
+    <input id="my-new-password" type="password" autocomplete="new-password" required>
+    <label for="my-new-password2">Ulangi sandi baru</label>
+    <input id="my-new-password2" type="password" autocomplete="new-password" required>
+    <button type="submit">Ganti sandi saya</button>
+    <span id="my-password-msg" role="alert"></span>
+  </form>
+  <p style="color:#475569; margin:.4rem 0 0">Mengganti sandi mematikan sesi di perangkat lain, sesi perangkat ini tetap jalan.</p>
+</div>
+
+<div id="admin-panel" class="account-panel" hidden>
+  <h2>🔐 Kelola Akun (hanya admin)</h2>
+  <form id="add-user-form" style="display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin-bottom:.5rem">
+    <label for="add-username">Username baru</label>
+    <input id="add-username" autocomplete="off" required>
+    <label for="add-password">Sandi</label>
+    <input id="add-password" type="password" autocomplete="new-password" required>
+    <label for="add-role">Peran</label>
+    <select id="add-role">
+      <option value="user">Pengguna</option>
+      <option value="admin">Admin</option>
+    </select>
+    <button type="submit">Tambah akun</button>
+    <span id="add-user-msg" role="alert"></span>
+  </form>
+  <div id="user-list" role="list"></div>
+  <p style="color:#475569; margin:.4rem 0 0">Pengaman: admin tidak bisa menghapus akunnya sendiri dan tidak bisa menghapus/menurunkan admin terakhir. Reset sandi oleh admin mematikan semua sesi akun itu.</p>
 </div>
 
 <div class="toolbar" role="toolbar" aria-label="Alat menggambar">
@@ -131,20 +174,103 @@
   var form = document.getElementById("login-form");
   var errorEl = document.getElementById("login-error");
 
+  var currentUser = null;
+  var myPanel = document.getElementById("my-account-panel");
+  var adminPanel = document.getElementById("admin-panel");
+
   async function refreshMe() {
     try {
       var res = await fetch("/api/me", { credentials: "same-origin" });
       if (!res.ok) throw new Error("not-logged-in");
       var data = await res.json();
-      label.textContent = "Pemilik: " + data.user.username;
+      currentUser = data.user;
+      label.textContent = (data.user.role === "admin" ? "Admin: " : "Pengguna: ") + data.user.username;
       toggle.hidden = true;
       logoutBtn.hidden = false;
       panel.hidden = true;
+      myPanel.hidden = false;
+      document.getElementById("my-account-info").textContent =
+        "Login sebagai " + data.user.username + " (peran: " + data.user.role + ").";
+      if (data.user.role === "admin") {
+        adminPanel.hidden = false;
+        await loadUsers();
+      } else {
+        adminPanel.hidden = true;
+      }
     } catch (e) {
+      currentUser = null;
       label.textContent = "Belum login";
       toggle.hidden = false;
       logoutBtn.hidden = true;
+      myPanel.hidden = true;
+      adminPanel.hidden = true;
     }
+  }
+
+  async function api(path, method, body) {
+    var res = await fetch(path, {
+      method: method, credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(data.error || ("Gagal (" + res.status + ")"));
+    return data;
+  }
+
+  async function loadUsers() {
+    var list = document.getElementById("user-list");
+    try {
+      var data = await api("/api/users", "GET");
+      list.innerHTML = "";
+      data.users.forEach(function (u) {
+        var row = document.createElement("div");
+        row.className = "account-row";
+        var who = document.createElement("span");
+        who.className = "who";
+        who.textContent = u.username + " (" + u.role + ")" + (currentUser && u.id === currentUser.id ? " — Anda" : "");
+        row.appendChild(who);
+        var roleSel = document.createElement("select");
+        roleSel.innerHTML = '<option value="user">Pengguna</option><option value="admin">Admin</option>';
+        roleSel.value = u.role;
+        row.appendChild(roleSel);
+        var roleBtn = document.createElement("button");
+        roleBtn.type = "button"; roleBtn.textContent = "Ubah peran";
+        roleBtn.addEventListener("click", async function () {
+          try { await api("/api/users/" + u.id, "PATCH", { role: roleSel.value }); await loadUsers(); }
+          catch (err) { window.alert(err.message); }
+        });
+        row.appendChild(roleBtn);
+        var passInput = document.createElement("input");
+        passInput.type = "password"; passInput.placeholder = "Sandi baru (min. 6)";
+        row.appendChild(passInput);
+        var passBtn = document.createElement("button");
+        passBtn.type = "button"; passBtn.textContent = "Reset sandi";
+        passBtn.addEventListener("click", async function () {
+          if (!passInput.value) { window.alert("Isi sandi baru dulu."); return; }
+          if (!window.confirm("Reset sandi " + u.username + "? Sesi akun itu di semua perangkat akan mati.")) return;
+          try { await api("/api/users/" + u.id, "PATCH", { password: passInput.value }); passInput.value = ""; window.alert("Sandi " + u.username + " sudah direset."); }
+          catch (err) { window.alert(err.message); }
+        });
+        row.appendChild(passBtn);
+        if (!(currentUser && u.id === currentUser.id)) {
+          var delBtn = document.createElement("button");
+          delBtn.type = "button"; delBtn.textContent = "Hapus";
+          delBtn.addEventListener("click", async function () {
+            if (!window.confirm("Hapus akun " + u.username + "?")) return;
+            try { await loadUsersAfterDelete(u.id); } catch (err) { window.alert(err.message); }
+          });
+          row.appendChild(delBtn);
+        }
+        list.appendChild(row);
+      });
+    } catch (err) {
+      list.textContent = err.message;
+    }
+  }
+  async function loadUsersAfterDelete(id) {
+    await api("/api/users/" + id, "DELETE");
+    await loadUsers();
   }
   toggle.addEventListener("click", function () { panel.hidden = !panel.hidden; errorEl.textContent = ""; });
   form.addEventListener("submit", async function (e) {
@@ -173,6 +299,38 @@
   logoutBtn.addEventListener("click", async function () {
     try { await fetch("/api/logout", { method: "POST", credentials: "same-origin" }); } catch (e) { /* abaikan */ }
     await refreshMe();
+  });
+  document.getElementById("my-password-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var msg = document.getElementById("my-password-msg");
+    msg.className = ""; msg.textContent = "";
+    var cur = document.getElementById("my-current-password").value;
+    var next = document.getElementById("my-new-password").value;
+    var next2 = document.getElementById("my-new-password2").value;
+    if (next !== next2) { msg.className = "msg-err"; msg.textContent = "Sandi baru dan ulangannya tidak sama."; return; }
+    try {
+      await api("/api/me/password", "POST", { current_password: cur, new_password: next });
+      msg.className = "msg-ok"; msg.textContent = "Sandi berhasil diganti.";
+      document.getElementById("my-current-password").value = "";
+      document.getElementById("my-new-password").value = "";
+      document.getElementById("my-new-password2").value = "";
+    } catch (err) { msg.className = "msg-err"; msg.textContent = err.message; }
+  });
+  document.getElementById("add-user-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var msg = document.getElementById("add-user-msg");
+    msg.className = ""; msg.textContent = "";
+    try {
+      await api("/api/users", "POST", {
+        username: document.getElementById("add-username").value,
+        password: document.getElementById("add-password").value,
+        role: document.getElementById("add-role").value,
+      });
+      msg.className = "msg-ok"; msg.textContent = "Akun berhasil ditambah.";
+      document.getElementById("add-username").value = "";
+      document.getElementById("add-password").value = "";
+      await loadUsers();
+    } catch (err) { msg.className = "msg-err"; msg.textContent = err.message; }
   });
   refreshMe();
 })();

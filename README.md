@@ -13,23 +13,37 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
 - Simpan otomatis di perangkat ini (localStorage)
 - Ekspor PNG (latar putih)
 
-## Login pemilik (pola GezyBoard)
+## Login + kelola akun (pola GezyBoard + Aspro)
 
 - Stack: Bun + Hono + bun:sqlite (WAL), satu proses, seperti GezyBoard.
 - Password di-hash bcrypt (Bun.password, cost 10); sesi berupa cookie HttpOnly
   `papantulis_session` berlaku 30 hari, tersimpan di tabel `sessions` sehingga
   bertahan setelah server restart.
-- **Tidak ada registrasi publik.** Akun pemilik hanya dibuat lewat skrip di server.
-- Papan tetap bisa dipakai tanpa login (seperti sekarang). Login baru menjadi
-  penanda pemilik dan gerbang fitur pemilik fase berikut (kelola / hapus papan server).
+- **Tidak ada registrasi publik.** Akun pertama dibuat lewat skrip di server.
+- Peran: `admin` dan `user`. Akun `pakgun` yang sudah ada otomatis menjadi
+  admin saat migrasi (bila tidak ada admin, akun tertua diangkat jadi admin).
+  Akun baru lewat web defaultnya `user`, admin bisa memilih `admin`.
+- Papan tetap bisa dipakai tanpa login (seperti sekarang). Yang login hanya
+  mendapat panel akun; hanya admin yang mendapat panel Kelola Akun.
+- **Kelola Akun (hanya admin, panel di web):** lihat daftar akun, tambah akun
+  (username 3–32 karakter huruf/angka/titik/strip/garis bawah, sandi min. 6),
+  ubah peran, reset sandi akun lain, hapus akun. Pengaman: tidak bisa hapus
+  akun sendiri, tidak bisa hapus/menurunkan admin terakhir. Reset sandi oleh
+  admin mematikan semua sesi akun itu.
+- **Ganti sandi sendiri (semua user yang login, panel Akun saya):** wajib isi
+  sandi lama, sandi baru min. 6, dan ulangi sandi baru. Sesi di perangkat lain
+  dimatikan, sesi perangkat ini tetap jalan.
+- Hash sandi tidak pernah dikembalikan ke klien.
 - Endpoint: `POST /api/login`, `POST /api/logout`, `GET /api/me`,
-  `GET /api/owner/status` (hanya pemilik, 401 bila belum login).
+  `GET /api/owner/status` (hanya admin), `GET/POST /api/users` (admin),
+  `PATCH/DELETE /api/users/:id` (admin), `POST /api/me/password` (login).
 
 ### Menjalankan lokal
 
 ```sh
 bun install
-bun run scripts/create-user.ts <username> <password>
+bun run scripts/create-user.ts <username> <password> [admin|user]
+# tanpa peran: pakgun atau akun pertama menjadi admin, sisanya user
 bun run src/index.ts
 # lalu buka http://localhost:3101
 ```

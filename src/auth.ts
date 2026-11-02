@@ -1,4 +1,4 @@
-import { db, type User } from "./db";
+import { db, type User, publicUser, type PublicUser } from "./db";
 
 // Sama persis dengan GezyBoard: cookie sesi HttpOnly, berlaku 30 hari.
 export const SESSION_COOKIE = "papantulis_session";
@@ -12,17 +12,49 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return Bun.password.verify(password, hash);
 }
 
-export function createUser(username: string, passwordHash: string): User {
-  const stmt = db.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?) RETURNING *");
-  return stmt.get(username, passwordHash) as User;
+export function createUser(username: string, passwordHash: string, role: string = "user"): User {
+  const stmt = db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?) RETURNING *");
+  return stmt.get(username, passwordHash, role) as User;
 }
 
 export function getUserByUsername(username: string): User | null {
   return (db.prepare("SELECT * FROM users WHERE username = ?").get(username) as User) ?? null;
 }
 
+export function getUserById(id: number): User | null {
+  return (db.prepare("SELECT * FROM users WHERE id = ?").get(id) as User) ?? null;
+}
+
+export function listUsers(): PublicUser[] {
+  const rows = db.prepare("SELECT * FROM users ORDER BY id").all() as User[];
+  return rows.map(publicUser);
+}
+
 export function countUsers(): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n;
+}
+
+export function countAdmins(): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get() as { n: number }).n;
+}
+
+export function updateUserPassword(id: number, passwordHash: string): void {
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, id);
+}
+
+export function updateUser(id: number, patch: { username?: string; role?: string; passwordHash?: string }): User | null {
+  const existing = getUserById(id);
+  if (!existing) return null;
+  const username = patch.username ?? existing.username;
+  const role = patch.role ?? existing.role;
+  const passwordHash = patch.passwordHash ?? existing.password_hash;
+  db.prepare("UPDATE users SET username = ?, role = ?, password_hash = ? WHERE id = ?").run(username, role, passwordHash, id);
+  return getUserById(id);
+}
+
+export function deleteUser(id: number): void {
+  destroySessionsForUser(id);
+  db.prepare("DELETE FROM users WHERE id = ?").run(id);
 }
 
 export function createSession(userId: number): string {
@@ -43,3 +75,14 @@ export function getUserBySession(token: string): User | null {
 export function destroySession(token: string): void {
   db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
 }
+
+export function destroySessionsForUser(userId: number): void {
+  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+}
+
+export function destroyOtherSessions(userId: number, keepToken: string): void {
+  db.prepare("DELETE FROM sessions WHERE user_id = ? AND token != ?").run(userId, keepToken);
+}
+
+export { publicUser };
+export type { PublicUser };
