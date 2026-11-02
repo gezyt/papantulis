@@ -12,6 +12,12 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
 - Hapus papan (masih bisa diurungkan)
 - Simpan otomatis di perangkat ini (localStorage)
 - Ekspor PNG (latar putih)
+- **Mode halaman:** bar halaman di atas papan — tombol Halaman 1, 2, …,
+  Sebelumnya/Berikutnya, **+ Halaman** untuk menambah halaman kosong sesuai
+  kebutuhan, dan 🗑️ Hapus halaman (dengan konfirmasi; halaman terakhir tidak
+  bisa dihapus). Tiap halaman punya coretan dan undo/redo sendiri; ekspor PNG
+  hanya untuk halaman yang sedang dibuka (`papantulis-halaman-N.png`).
+  Coretan format lama otomatis dipindah menjadi Halaman 1.
 
 ## Login + kelola akun (pola GezyBoard + Aspro)
 

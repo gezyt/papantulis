@@ -47,6 +47,8 @@
   input[type="range"] { width:110px; accent-color:var(--accent); }
   input[type="color"] { width:34px; height:30px; padding:0; border:1px solid #cbd5e1; border-radius:8px; background:#fff; }
   select { border:1px solid #cbd5e1; border-radius:8px; padding:.4rem; background:#fff; }
+  .page-bar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.45rem .75rem; background:#fff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
+  .page-bar .page-label { color:#475569; }
   #stage { position:relative; flex:1; min-height:0; overflow:hidden; background:#fff; }
   #stage.bg-grid { background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size:28px 28px; }
   #stage.bg-lines { background-image: repeating-linear-gradient(transparent, transparent 31px, #dbeafe 32px); }
@@ -161,6 +163,7 @@
   </div>
 </div>
 
+<div id="page-bar" class="page-bar" role="navigation" aria-label="Halaman papan"></div>
 <div id="stage" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas></div>
 
 <footer>
@@ -360,23 +363,87 @@
   var stage = document.getElementById("stage");
   var ctx = canvas.getContext("2d");
   var statusEl = document.getElementById("status");
-  var STORAGE_KEY = "papantulis-strokes-v1";
+  var STORAGE_KEY = "papantulis-pages-v2";
+  var OLD_STORAGE_KEY = "papantulis-strokes-v1";
 
   var tool = "pen";
   var color = "#1f2937";
   var width = 4;
 
-  // Riwayat sebagai foto kondisi papan (cocok untuk prototipe satu pengguna).
-  var history = [[]];
-  var historyIndex = 0;
+  // Satu papan = satu daftar halaman. Tiap halaman punya coretan sendiri
+  // dan riwayat undo/redo sendiri (foto kondisi halaman itu).
+  var pageHistories = [{ history: [[]], index: 0 }];
+  var currentPage = 0;
   var current = null; // goresan yang sedang digambar
 
-  function strokes() { return history[historyIndex]; }
+  function pageState() { return pageHistories[currentPage]; }
+  function strokes() { var s = pageState(); return s.history[s.index]; }
 
   function setStatus(text) { statusEl.textContent = text; }
 
   function saveLocal() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(strokes())); } catch (e) { /* penyimpanan penuh: papan tetap bisa dipakai */ }
+    try {
+      var pages = pageHistories.map(function (s) { return s.history[s.index]; });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, current: currentPage, pages: pages }));
+    } catch (e) { /* penyimpanan penuh: papan tetap bisa dipakai */ }
+  }
+
+  function renderPageBar() {
+    var bar = document.getElementById("page-bar");
+    bar.innerHTML = "";
+    var label = document.createElement("span");
+    label.className = "page-label";
+    label.textContent = "Halaman:";
+    bar.appendChild(label);
+    var prev = document.createElement("button");
+    prev.type = "button"; prev.textContent = "◀"; prev.disabled = currentPage === 0;
+    prev.addEventListener("click", function () { switchPage(currentPage - 1); });
+    bar.appendChild(prev);
+    pageHistories.forEach(function (_s, i) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "Halaman " + (i + 1);
+      btn.setAttribute("aria-pressed", String(i === currentPage));
+      btn.addEventListener("click", function () { switchPage(i); });
+      bar.appendChild(btn);
+    });
+    var next = document.createElement("button");
+    next.type = "button"; next.textContent = "▶"; next.disabled = currentPage === pageHistories.length - 1;
+    next.addEventListener("click", function () { switchPage(currentPage + 1); });
+    bar.appendChild(next);
+    var add = document.createElement("button");
+    add.type = "button"; add.textContent = "+ Halaman";
+    add.addEventListener("click", function () {
+      pageHistories.push({ history: [[]], index: 0 });
+      saveLocal();
+      switchPage(pageHistories.length - 1);
+      setStatus("Halaman " + pageHistories.length + " dibuat. Papan baru ini kosong.");
+    });
+    bar.appendChild(add);
+    var del = document.createElement("button");
+    del.type = "button"; del.textContent = "🗑️ Hapus halaman";
+    del.disabled = pageHistories.length <= 1;
+    del.addEventListener("click", function () {
+      if (pageHistories.length <= 1) return;
+      if (!window.confirm("Hapus Halaman " + (currentPage + 1) + " beserta semua coretannya?")) return;
+      pageHistories.splice(currentPage, 1);
+      currentPage = Math.min(currentPage, pageHistories.length - 1);
+      saveLocal();
+      renderPageBar();
+      setStatus("Halaman dihapus. Sekarang di Halaman " + (currentPage + 1) + ".");
+      redraw();
+    });
+    bar.appendChild(del);
+  }
+
+  function switchPage(i) {
+    if (i < 0 || i >= pageHistories.length || i === currentPage) return;
+    current = null;
+    currentPage = i;
+    saveLocal();
+    renderPageBar();
+    setStatus("Halaman " + (currentPage + 1) + " dari " + pageHistories.length + ".");
+    redraw();
   }
 
   function resize() {
@@ -430,14 +497,16 @@
     ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
     strokes().forEach(drawStroke);
     if (current) drawStroke(current);
-    document.getElementById("undo").disabled = historyIndex === 0;
-    document.getElementById("redo").disabled = historyIndex === history.length - 1;
+    var s = pageState();
+    document.getElementById("undo").disabled = s.index === 0;
+    document.getElementById("redo").disabled = s.index === s.history.length - 1;
   }
 
   function commit(nextStrokes, note) {
-    history = history.slice(0, historyIndex + 1);
-    history.push(nextStrokes);
-    historyIndex = history.length - 1;
+    var s = pageState();
+    s.history = s.history.slice(0, s.index + 1);
+    s.history.push(nextStrokes);
+    s.index = s.history.length - 1;
     saveLocal();
     setStatus(note || "Tersimpan otomatis di perangkat ini.");
     redraw();
@@ -507,15 +576,17 @@
   });
 
   document.getElementById("undo").addEventListener("click", function () {
-    if (historyIndex > 0) { historyIndex--; saveLocal(); setStatus("Satu goresan diurungkan."); redraw(); }
+    var s = pageState();
+    if (s.index > 0) { s.index--; saveLocal(); setStatus("Satu goresan diurungkan."); redraw(); }
   });
   document.getElementById("redo").addEventListener("click", function () {
-    if (historyIndex < history.length - 1) { historyIndex++; saveLocal(); setStatus("Satu goresan diulangi."); redraw(); }
+    var s = pageState();
+    if (s.index < s.history.length - 1) { s.index++; saveLocal(); setStatus("Satu goresan diulangi."); redraw(); }
   });
   document.getElementById("clear").addEventListener("click", function () {
     if (!strokes().length) return;
-    if (!window.confirm("Hapus semua coretan di papan ini? Masih bisa diurungkan.")) return;
-    commit([], "Papan dikosongkan. Tekan Urungkan untuk mengembalikan.");
+    if (!window.confirm("Hapus semua coretan di Halaman " + (currentPage + 1) + " ini? Masih bisa diurungkan.")) return;
+    commit([], "Halaman dikosongkan. Tekan Urungkan untuk mengembalikan.");
   });
   document.getElementById("export").addEventListener("click", function () {
     var out = document.createElement("canvas");
@@ -524,10 +595,10 @@
     octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, out.width, out.height);
     octx.drawImage(canvas, 0, 0);
     var a = document.createElement("a");
-    a.download = "papantulis.png";
+    a.download = "papantulis-halaman-" + (currentPage + 1) + ".png";
     a.href = out.toDataURL("image/png");
     a.click();
-    setStatus("PNG diunduh.");
+    setStatus("PNG Halaman " + (currentPage + 1) + " diunduh.");
   });
   document.addEventListener("keydown", function (e) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -537,11 +608,26 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); document.getElementById("redo").click(); }
   });
 
-  // Muat coretan tersimpan, kalau ada.
+  // Muat halaman tersimpan, kalau ada. Coretan format lama (satu papan)
+  // dipindah jadi Halaman 1, tidak dibuang.
   try {
-    var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    if (Array.isArray(saved) && saved.length) { history = [saved]; historyIndex = 0; setStatus("Coretan sebelumnya dimuat dari perangkat ini."); }
+    var savedPages = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (savedPages && savedPages.version === 2 && Array.isArray(savedPages.pages) && savedPages.pages.length) {
+      pageHistories = savedPages.pages.map(function (p) { return { history: [Array.isArray(p) ? p : []], index: 0 }; });
+      currentPage = Math.min(Math.max(0, savedPages.current || 0), pageHistories.length - 1);
+      setStatus("Halaman sebelumnya dimuat dari perangkat ini.");
+    } else {
+      var oldSaved = JSON.parse(localStorage.getItem(OLD_STORAGE_KEY) || "[]");
+      if (Array.isArray(oldSaved) && oldSaved.length) {
+        pageHistories = [{ history: [oldSaved], index: 0 }];
+        currentPage = 0;
+        try { localStorage.removeItem(OLD_STORAGE_KEY); } catch (e) { /* abaikan */ }
+        saveLocal();
+        setStatus("Coretan sebelumnya dipindah menjadi Halaman 1.");
+      }
+    }
   } catch (e) { /* abaikan data rusak, mulai dari papan kosong */ }
+  renderPageBar();
 
   var resizeTimer = null;
   window.addEventListener("resize", function () {
