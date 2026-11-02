@@ -68,6 +68,15 @@
   #stage.bg-dots { background-image: radial-gradient(circle, #94a3b8 1.5px, transparent 1.6px); background-size:28px 28px; background-position:-14px -14px; }
   canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; display:block; }
   footer { display:flex; flex-wrap:wrap; gap:.5rem; justify-content:space-between; align-items:center; padding:.45rem .75rem; background:var(--bar); border-top:1px solid #e2e8f0; font-size:.8rem; color:#64748b; }
+  /* Bar atas gabungan (2 bar total): judul+akun, Sesi, dan Halaman dalam
+     satu baris yang bisa digeser. Anak bar atas tidak lagi jadi bar sendiri:
+     tanpa padding/border/gulir sendiri, supaya garis bawahnya menyatu dan
+     gulir horizontalnya ditangani bar atas, bukan tiap kelompok. Pemisah
+     vertikal menandai batas kelompok Sesi dan Halaman. */
+  #topbar { display:flex; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; gap:.75rem; align-items:center; padding:.55rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
+  #topbar > * { flex-shrink:0; }
+  #topbar header { border-bottom:none; padding:0; overflow:visible; }
+  #topbar .page-bar { border-bottom:none; padding:0; background:transparent; overflow:visible; border-left:1px solid #e2e8f0; padding-left:.75rem; }
   /* Layar penuh: sembunyikan header/footer/panel akun supaya ruang menulis
      di PID maksimal; tombol keluar layar penuh tetap ada di toolbar. Esc
      juga keluar secara bawaan browser, dan kelas ini dilepas lewat
@@ -82,6 +91,7 @@
 </style>
 </head>
 <body>
+<div id="topbar">
 <header>
   <h1>✏️ PapanTulis</h1>
   <p>Coret bebas pakai jari, mouse, atau stylus. Tanpa login pun papan tetap bisa dipakai dan tersimpan di perangkat ini; setelah login, papan tersimpan di server dan bisa dibuka di perangkat lain.</p>
@@ -92,6 +102,15 @@
     <button type="button" id="logout" hidden aria-label="Keluar" title="Keluar">🚪</button>
   </div>
 </header>
+<div id="session-bar" class="page-bar" role="navigation" aria-label="Sesi papan">
+  <span class="page-label">Sesi:</span>
+  <select id="session-select" aria-label="Pilih sesi"></select>
+  <button type="button" id="session-add" aria-label="Sesi baru" title="Sesi baru">+</button>
+  <button type="button" id="session-rename" aria-label="Ganti nama sesi" title="Ganti nama sesi">✏️</button>
+  <button type="button" id="session-delete" aria-label="Hapus sesi" title="Hapus sesi">🗑️</button>
+</div>
+<div id="page-bar" class="page-bar" role="navigation" aria-label="Halaman papan"></div>
+</div>
 
 <div id="login-panel" hidden>
   <form id="login-form" style="display:contents">
@@ -181,14 +200,6 @@
   </div>
 </div>
 
-<div id="session-bar" class="page-bar" role="navigation" aria-label="Sesi papan">
-  <span class="page-label">Sesi:</span>
-  <select id="session-select" aria-label="Pilih sesi"></select>
-  <button type="button" id="session-add" aria-label="Sesi baru" title="Sesi baru">+</button>
-  <button type="button" id="session-rename" aria-label="Ganti nama sesi" title="Ganti nama sesi">✏️</button>
-  <button type="button" id="session-delete" aria-label="Hapus sesi" title="Hapus sesi">🗑️</button>
-</div>
-<div id="page-bar" class="page-bar" role="navigation" aria-label="Halaman papan"></div>
 <div id="stage" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas></div>
 
 <footer>
