@@ -14,9 +14,14 @@
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:var(--bg); display:flex; flex-direction:column; height:100dvh; overflow:hidden; }
-  header { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; padding:.55rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
+  /* Bar utama 1 baris: tidak membungkus, digeser horizontal bila tidak muat.
+     Anak bar tidak boleh menyusut, supaya tombol tidak terjepit jadi setengah. */
+  header { display:flex; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; gap:.5rem; align-items:center; padding:.55rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
+  header > * { flex-shrink:0; }
   header h1 { font-size:1.05rem; margin:0 .25rem 0 0; white-space:nowrap; }
-  header p { margin:0; font-size:.8rem; color:#64748b; }
+  /* Deskripsi panjang disembunyikan selalu, bukan hanya di HP: header harus
+     tetap 1 baris, dan penjelasan itu sudah ada di bawah lewat status papan. */
+  header p { display:none; }
   #owner-area { margin-left:auto; display:flex; gap:.4rem; align-items:center; font-size:.85rem; }
   #login-panel { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.5rem .75rem; background:#eef2ff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
   /* WAJIB: display:flex di atas mengalahkan [hidden] bawaan browser, jadi tanpa
@@ -34,8 +39,13 @@
   .account-row .who { min-width:160px; }
   .msg-ok { color:#059669; }
   .msg-err { color:#dc2626; }
-  .toolbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.5rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
+  .toolbar { display:flex; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; gap:.4rem; align-items:center; padding:.5rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
+  .toolbar > * { flex-shrink:0; }
   .group { display:flex; gap:.3rem; align-items:center; padding-right:.5rem; border-right:1px solid #e2e8f0; }
+  .group > * { flex-shrink:0; }
+  /* Tombol ikon di bar utama lebih ramping dari tombol formulir di panel akun,
+     supaya satu baris muat lebih banyak tombol tanpa mengecilkan target sentuh. */
+  header button, .toolbar button, .page-bar button { padding:.4rem .55rem; }
   .group:last-child { border-right:none; }
   button { border:1px solid #cbd5e1; background:#fff; border-radius:999px; padding:.4rem .8rem; cursor:pointer; font-size:.9rem; }
   button:hover { border-color:var(--accent); }
@@ -47,7 +57,8 @@
   input[type="range"] { width:110px; accent-color:var(--accent); }
   input[type="color"] { width:34px; height:30px; padding:0; border:1px solid #cbd5e1; border-radius:8px; background:#fff; }
   select { border:1px solid #cbd5e1; border-radius:8px; padding:.4rem; background:#fff; }
-  .page-bar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.45rem .75rem; background:#fff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
+  .page-bar { display:flex; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; gap:.4rem; align-items:center; padding:.45rem .75rem; background:#fff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
+  .page-bar > * { flex-shrink:0; }
   .page-bar .page-label { color:#475569; }
   #stage { position:relative; flex:1; min-height:0; overflow:hidden; background:#fff; }
   #stage.bg-grid { background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size:28px 28px; }
@@ -76,9 +87,9 @@
   <p>Coret bebas pakai jari, mouse, atau stylus. Tanpa login pun papan tetap bisa dipakai dan tersimpan di perangkat ini; setelah login, papan tersimpan di server dan bisa dibuka di perangkat lain.</p>
   <div id="owner-area">
     <span id="owner-label">Belum login</span>
-    <button type="button" id="login-toggle">Login pemilik</button>
-    <button type="button" id="account-toggle" hidden>🔐 Kelola Akun</button>
-    <button type="button" id="logout" hidden>Keluar</button>
+    <button type="button" id="login-toggle" aria-label="Login pemilik" title="Login pemilik">🔑</button>
+    <button type="button" id="account-toggle" hidden aria-label="Kelola Akun" title="Kelola Akun">🔐</button>
+    <button type="button" id="logout" hidden aria-label="Keluar" title="Keluar">🚪</button>
   </div>
 </header>
 
@@ -133,9 +144,9 @@
 
 <div class="toolbar" role="toolbar" aria-label="Alat menggambar">
   <div class="group" role="group" aria-label="Alat">
-    <button type="button" id="tool-pen" aria-pressed="true">🖊️ Pena</button>
-    <button type="button" id="tool-highlighter" aria-pressed="false">🖍️ Stabilo</button>
-    <button type="button" id="tool-eraser" aria-pressed="false">🧽 Penghapus</button>
+    <button type="button" id="tool-pen" aria-pressed="true" aria-label="Pena" title="Pena">🖊️</button>
+    <button type="button" id="tool-highlighter" aria-pressed="false" aria-label="Stabilo" title="Stabilo">🖍️</button>
+    <button type="button" id="tool-eraser" aria-pressed="false" aria-label="Penghapus" title="Penghapus">🧽</button>
   </div>
   <div class="group" role="group" aria-label="Warna">
     <button type="button" class="swatch" data-color="#1f2937" style="background:#1f2937" aria-label="Hitam" aria-pressed="true"></button>
@@ -160,22 +171,22 @@
     </select>
   </div>
   <div class="group" role="group" aria-label="Riwayat">
-    <button type="button" id="undo" disabled>↩️ Urungkan</button>
-    <button type="button" id="redo" disabled>↪️ Ulangi</button>
-    <button type="button" id="clear">🗑️ Hapus papan</button>
+    <button type="button" id="undo" disabled aria-label="Urungkan" title="Urungkan">↩️</button>
+    <button type="button" id="redo" disabled aria-label="Ulangi" title="Ulangi">↪️</button>
+    <button type="button" id="clear" aria-label="Hapus papan" title="Hapus papan">🗑️</button>
   </div>
   <div class="group">
-    <button type="button" id="export">⬇️ Simpan PNG</button>
-    <button type="button" id="fullscreen" aria-pressed="false">⛶ Layar penuh</button>
+    <button type="button" id="export" aria-label="Simpan PNG" title="Simpan PNG">⬇️</button>
+    <button type="button" id="fullscreen" aria-pressed="false" aria-label="Layar penuh" title="Layar penuh">⛶</button>
   </div>
 </div>
 
 <div id="session-bar" class="page-bar" role="navigation" aria-label="Sesi papan">
   <span class="page-label">Sesi:</span>
   <select id="session-select" aria-label="Pilih sesi"></select>
-  <button type="button" id="session-add">+ Sesi baru</button>
-  <button type="button" id="session-rename">✏️ Ganti nama</button>
-  <button type="button" id="session-delete">🗑️ Hapus sesi</button>
+  <button type="button" id="session-add" aria-label="Sesi baru" title="Sesi baru">+</button>
+  <button type="button" id="session-rename" aria-label="Ganti nama sesi" title="Ganti nama sesi">✏️</button>
+  <button type="button" id="session-delete" aria-label="Hapus sesi" title="Hapus sesi">🗑️</button>
 </div>
 <div id="page-bar" class="page-bar" role="navigation" aria-label="Halaman papan"></div>
 <div id="stage" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas></div>
@@ -213,7 +224,9 @@
       logoutBtn.hidden = false;
       panel.hidden = true;
       accountToggle.hidden = false;
-      accountToggle.textContent = data.user.role === "admin" ? "🔐 Kelola Akun" : "🔑 Akun saya";
+      accountToggle.textContent = data.user.role === "admin" ? "🔐" : "🔑";
+      accountToggle.setAttribute("aria-label", data.user.role === "admin" ? "Kelola Akun" : "Akun saya");
+      accountToggle.setAttribute("title", data.user.role === "admin" ? "Kelola Akun" : "Akun saya");
       accountToggle.setAttribute("aria-expanded", "false");
       // Default: area akun tersembunyi, dibuka lewat tombol di atas.
       accountPanels.hidden = true;
@@ -631,22 +644,29 @@
     bar.appendChild(label);
     var prev = document.createElement("button");
     prev.type = "button"; prev.textContent = "◀"; prev.disabled = currentPage === 0;
+    prev.setAttribute("aria-label", "Halaman sebelumnya"); prev.setAttribute("title", "Halaman sebelumnya");
     prev.addEventListener("click", function () { switchPage(currentPage - 1); });
     bar.appendChild(prev);
     pageHistories.forEach(function (_s, i) {
       var btn = document.createElement("button");
       btn.type = "button";
-      btn.textContent = "Halaman " + (i + 1);
+      // Nomor saja, bukan "Halaman 1": label "Halaman:" di awal bar sudah
+      // menjelaskan angkanya, dan ini menghemat lebar tiap tombol halaman.
+      btn.textContent = String(i + 1);
+      btn.setAttribute("aria-label", "Halaman " + (i + 1));
+      btn.setAttribute("title", "Halaman " + (i + 1));
       btn.setAttribute("aria-pressed", String(i === currentPage));
       btn.addEventListener("click", function () { switchPage(i); });
       bar.appendChild(btn);
     });
     var next = document.createElement("button");
     next.type = "button"; next.textContent = "▶"; next.disabled = currentPage === pageHistories.length - 1;
+    next.setAttribute("aria-label", "Halaman berikutnya"); next.setAttribute("title", "Halaman berikutnya");
     next.addEventListener("click", function () { switchPage(currentPage + 1); });
     bar.appendChild(next);
     var add = document.createElement("button");
-    add.type = "button"; add.textContent = "+ Halaman";
+    add.type = "button"; add.textContent = "+";
+    add.setAttribute("aria-label", "Tambah halaman"); add.setAttribute("title", "Tambah halaman");
     add.addEventListener("click", function () {
       pageHistories.push({ history: [[]], index: 0 });
       saveLocal();
@@ -655,7 +675,8 @@
     });
     bar.appendChild(add);
     var del = document.createElement("button");
-    del.type = "button"; del.textContent = "🗑️ Hapus halaman";
+    del.type = "button"; del.textContent = "🗑️";
+    del.setAttribute("aria-label", "Hapus halaman"); del.setAttribute("title", "Hapus halaman");
     del.disabled = pageHistories.length <= 1;
     del.addEventListener("click", function () {
       if (pageHistories.length <= 1) return;
@@ -840,7 +861,9 @@
   function updateFullscreenButton() {
     var active = !!document.fullscreenElement;
     document.body.classList.toggle("is-fullscreen", active);
-    fullscreenBtn.textContent = active ? "⛶ Keluar layar penuh" : "⛶ Layar penuh";
+    fullscreenBtn.textContent = "⛶";
+    fullscreenBtn.setAttribute("aria-label", active ? "Keluar layar penuh" : "Layar penuh");
+    fullscreenBtn.setAttribute("title", active ? "Keluar layar penuh" : "Layar penuh");
     fullscreenBtn.setAttribute("aria-pressed", String(active));
     if (active) setStatus("Mode layar penuh. Tekan tombol yang sama atau Esc untuk keluar.");
   }
