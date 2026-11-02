@@ -13,6 +13,10 @@
   header { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; padding:.55rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
   header h1 { font-size:1.05rem; margin:0 .25rem 0 0; white-space:nowrap; }
   header p { margin:0; font-size:.8rem; color:#64748b; }
+  #owner-area { margin-left:auto; display:flex; gap:.4rem; align-items:center; font-size:.85rem; }
+  #login-panel { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.5rem .75rem; background:#eef2ff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
+  #login-panel input { border:1px solid #cbd5e1; border-radius:8px; padding:.4rem .6rem; }
+  #login-error { color:#dc2626; }
   .toolbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.5rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
   .group { display:flex; gap:.3rem; align-items:center; padding-right:.5rem; border-right:1px solid #e2e8f0; }
   .group:last-child { border-right:none; }
@@ -42,7 +46,24 @@
 <header>
   <h1>✏️ PapanTulis</h1>
   <p>Coret bebas pakai jari, mouse, atau stylus. Satu pengguna, tersimpan otomatis di perangkat ini.</p>
+  <div id="owner-area">
+    <span id="owner-label">Belum login</span>
+    <button type="button" id="login-toggle">Login pemilik</button>
+    <button type="button" id="logout" hidden>Keluar</button>
+  </div>
 </header>
+
+<div id="login-panel" hidden>
+  <form id="login-form" style="display:contents">
+    <label for="login-username">Username</label>
+    <input id="login-username" name="username" autocomplete="username" required>
+    <label for="login-password">Password</label>
+    <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Masuk</button>
+    <span id="login-error" role="alert"></span>
+  </form>
+  <span style="color:#475569">Akun pemilik dibuat lewat skrip di server, tidak ada daftar publik. Fase ini baru login saja; coretan masih tersimpan di browser.</span>
+</div>
 
 <div class="toolbar" role="toolbar" aria-label="Alat menggambar">
   <div class="group" role="group" aria-label="Alat">
@@ -88,6 +109,60 @@
   <span>© 2026 GezyTech App · Dikembangkan oleh PakGun · Dilarang menyalin/menduplikat kode tanpa izin tertulis.</span>
 </footer>
 
+<script>
+(function () {
+  "use strict";
+  var label = document.getElementById("owner-label");
+  var toggle = document.getElementById("login-toggle");
+  var logoutBtn = document.getElementById("logout");
+  var panel = document.getElementById("login-panel");
+  var form = document.getElementById("login-form");
+  var errorEl = document.getElementById("login-error");
+
+  async function refreshMe() {
+    try {
+      var res = await fetch("/api/me", { credentials: "same-origin" });
+      if (!res.ok) throw new Error("not-logged-in");
+      var data = await res.json();
+      label.textContent = "Pemilik: " + data.user.username;
+      toggle.hidden = true;
+      logoutBtn.hidden = false;
+      panel.hidden = true;
+    } catch (e) {
+      label.textContent = "Belum login";
+      toggle.hidden = false;
+      logoutBtn.hidden = true;
+    }
+  }
+  toggle.addEventListener("click", function () { panel.hidden = !panel.hidden; errorEl.textContent = ""; });
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    errorEl.textContent = "";
+    try {
+      var res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          username: document.getElementById("login-username").value,
+          password: document.getElementById("login-password").value,
+        }),
+      });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) { errorEl.textContent = data.error || "Username atau password salah."; return; }
+      document.getElementById("login-password").value = "";
+      await refreshMe();
+    } catch (err) {
+      errorEl.textContent = "Server belum menjalankan mode Bun (endpoint /api/login tidak ditemukan).";
+    }
+  });
+  logoutBtn.addEventListener("click", async function () {
+    try { await fetch("/api/logout", { method: "POST", credentials: "same-origin" }); } catch (e) { /* abaikan */ }
+    await refreshMe();
+  });
+  refreshMe();
+})();
+</script>
 <script>
 (function () {
   "use strict";
