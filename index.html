@@ -27,6 +27,7 @@
   #login-error { color:#dc2626; }
   .account-panel { padding:.6rem .75rem; background:#fff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
   .account-panel[hidden] { display:none; }
+  #account-panels[hidden] { display:none; }
   .account-panel h2 { font-size:1rem; margin:.2rem 0 .5rem; }
   .account-panel input, .account-panel select { border:1px solid #cbd5e1; border-radius:8px; padding:.4rem .6rem; }
   .account-row { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.4rem 0; border-top:1px solid #f1f5f9; }
@@ -68,6 +69,7 @@
   <div id="owner-area">
     <span id="owner-label">Belum login</span>
     <button type="button" id="login-toggle">Login pemilik</button>
+    <button type="button" id="account-toggle" hidden>🔐 Kelola Akun</button>
     <button type="button" id="logout" hidden>Keluar</button>
   </div>
 </header>
@@ -84,6 +86,7 @@
   <span style="color:#475569">Tidak ada daftar publik. Akun pertama dibuat lewat skrip di server; setelah login sebagai admin, akun baru bisa ditambah lewat panel Kelola Akun di bawah. Coretan masih tersimpan di browser.</span>
 </div>
 
+<div id="account-panels" hidden>
 <div id="my-account-panel" class="account-panel" hidden>
   <h2>🔑 Akun saya</h2>
   <p id="my-account-info" style="margin:.2rem 0 .5rem"></p>
@@ -117,6 +120,7 @@
   </form>
   <div id="user-list" role="list"></div>
   <p style="color:#475569; margin:.4rem 0 0">Pengaman: admin tidak bisa menghapus akunnya sendiri dan tidak bisa menghapus/menurunkan admin terakhir. Reset sandi oleh admin mematikan semua sesi akun itu.</p>
+</div>
 </div>
 
 <div class="toolbar" role="toolbar" aria-label="Alat menggambar">
@@ -177,6 +181,8 @@
   var currentUser = null;
   var myPanel = document.getElementById("my-account-panel");
   var adminPanel = document.getElementById("admin-panel");
+  var accountToggle = document.getElementById("account-toggle");
+  var accountPanels = document.getElementById("account-panels");
 
   async function refreshMe() {
     try {
@@ -188,6 +194,11 @@
       toggle.hidden = true;
       logoutBtn.hidden = false;
       panel.hidden = true;
+      accountToggle.hidden = false;
+      accountToggle.textContent = data.user.role === "admin" ? "🔐 Kelola Akun" : "🔑 Akun saya";
+      accountToggle.setAttribute("aria-expanded", "false");
+      // Default: area akun tersembunyi, dibuka lewat tombol di atas.
+      accountPanels.hidden = true;
       myPanel.hidden = false;
       document.getElementById("my-account-info").textContent =
         "Login sebagai " + data.user.username + " (peran: " + data.user.role + ").";
@@ -202,6 +213,8 @@
       label.textContent = "Belum login";
       toggle.hidden = false;
       logoutBtn.hidden = true;
+      accountToggle.hidden = true;
+      accountPanels.hidden = true;
       myPanel.hidden = true;
       adminPanel.hidden = true;
     }
@@ -299,6 +312,11 @@
   logoutBtn.addEventListener("click", async function () {
     try { await fetch("/api/logout", { method: "POST", credentials: "same-origin" }); } catch (e) { /* abaikan */ }
     await refreshMe();
+  });
+  accountToggle.addEventListener("click", async function () {
+    accountPanels.hidden = !accountPanels.hidden;
+    accountToggle.setAttribute("aria-expanded", String(!accountPanels.hidden));
+    if (!accountPanels.hidden && currentUser && currentUser.role === "admin") await loadUsers();
   });
   document.getElementById("my-password-form").addEventListener("submit", async function (e) {
     e.preventDefault();

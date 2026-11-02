@@ -25,7 +25,10 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
   Akun baru lewat web defaultnya `user`, admin bisa memilih `admin`.
 - Papan tetap bisa dipakai tanpa login (seperti sekarang). Yang login hanya
   mendapat panel akun; hanya admin yang mendapat panel Kelola Akun.
-- **Kelola Akun (hanya admin, panel di web):** lihat daftar akun, tambah akun
+- **Kelola Akun (hanya admin, panel di web):** panel Akun saya + Kelola Akun
+  defaultnya tersembunyi agar papan lega; dibuka/tutup lewat tombol di header
+  (🔐 Kelola Akun untuk admin, 🔑 Akun saya untuk pengguna). Di dalamnya:
+  lihat daftar akun, tambah akun
   (username 3–32 karakter huruf/angka/titik/strip/garis bawah, sandi min. 6),
   ubah peran, reset sandi akun lain, hapus akun. Pengaman: tidak bisa hapus
   akun sendiri, tidak bisa hapus/menurunkan admin terakhir. Reset sandi oleh
