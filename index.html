@@ -77,6 +77,11 @@
   #topbar > * { flex-shrink:0; }
   #topbar header { border-bottom:none; padding:0; overflow:visible; }
   #topbar .page-bar { border-bottom:none; padding:0; background:transparent; overflow:visible; border-left:1px solid #e2e8f0; padding-left:.75rem; }
+  /* Toolbar pindah ke kanan bar atas (1 bar total): bukan bar sendiri lagi,
+     tanpa padding/border/gulir sendiri, dan margin-left otomatis mendorongnya
+     ke tepi kanan selama lebar layar masih muat; bila tidak muat, margin itu
+     jadi 0 dan bar atas yang digeser horizontal. */
+  #topbar .toolbar { border-bottom:none; padding:0; background:transparent; overflow:visible; border-left:1px solid #e2e8f0; padding-left:.75rem; margin-left:auto; }
   /* Layar penuh: sembunyikan header/footer/panel akun supaya ruang menulis
      di PID maksimal; tombol keluar layar penuh tetap ada di toolbar. Esc
      juga keluar secara bawaan browser, dan kelas ini dilepas lewat
@@ -110,6 +115,44 @@
   <button type="button" id="session-delete" aria-label="Hapus sesi" title="Hapus sesi">🗑️</button>
 </div>
 <div id="page-bar" class="page-bar" role="navigation" aria-label="Halaman papan"></div>
+<div class="toolbar" role="toolbar" aria-label="Alat menggambar">
+  <div class="group" role="group" aria-label="Alat">
+    <button type="button" id="tool-pen" aria-pressed="true" aria-label="Pena" title="Pena">🖊️</button>
+    <button type="button" id="tool-highlighter" aria-pressed="false" aria-label="Stabilo" title="Stabilo">🖍️</button>
+    <button type="button" id="tool-eraser" aria-pressed="false" aria-label="Penghapus" title="Penghapus">🧽</button>
+  </div>
+  <div class="group" role="group" aria-label="Warna">
+    <button type="button" class="swatch" data-color="#1f2937" style="background:#1f2937" aria-label="Hitam" aria-pressed="true"></button>
+    <button type="button" class="swatch" data-color="#dc2626" style="background:#dc2626" aria-label="Merah" aria-pressed="false"></button>
+    <button type="button" class="swatch" data-color="#2563eb" style="background:#2563eb" aria-label="Biru" aria-pressed="false"></button>
+    <button type="button" class="swatch" data-color="#059669" style="background:#059669" aria-label="Hijau" aria-pressed="false"></button>
+    <button type="button" class="swatch" data-color="#7c3aed" style="background:#7c3aed" aria-label="Ungu" aria-pressed="false"></button>
+    <button type="button" class="swatch" data-color="#ea580c" style="background:#ea580c" aria-label="Oranye" aria-pressed="false"></button>
+    <input type="color" id="custom-color" value="#1f2937" aria-label="Warna bebas">
+  </div>
+  <div class="group">
+    <label for="width">Tebal <span id="width-label">4</span> px</label>
+    <input type="range" id="width" min="2" max="24" value="4">
+  </div>
+  <div class="group">
+    <label for="background">Latar</label>
+    <select id="background">
+      <option value="plain">Polos</option>
+      <option value="grid">Kotak-kotak</option>
+      <option value="lines">Bergaris</option>
+      <option value="dots" selected>Titik-titik</option>
+    </select>
+  </div>
+  <div class="group" role="group" aria-label="Riwayat">
+    <button type="button" id="undo" disabled aria-label="Urungkan" title="Urungkan">↩️</button>
+    <button type="button" id="redo" disabled aria-label="Ulangi" title="Ulangi">↪️</button>
+    <button type="button" id="clear" aria-label="Hapus papan" title="Hapus papan">🗑️</button>
+  </div>
+  <div class="group">
+    <button type="button" id="export" aria-label="Simpan PNG" title="Simpan PNG">⬇️</button>
+    <button type="button" id="fullscreen" aria-pressed="false" aria-label="Layar penuh" title="Layar penuh">⛶</button>
+  </div>
+</div>
 </div>
 
 <div id="login-panel" hidden>
@@ -159,45 +202,6 @@
   <div id="user-list" role="list"></div>
   <p style="color:#475569; margin:.4rem 0 0">Pengaman: admin tidak bisa menghapus akunnya sendiri dan tidak bisa menghapus/menurunkan admin terakhir. Reset sandi oleh admin mematikan semua sesi akun itu.</p>
 </div>
-</div>
-
-<div class="toolbar" role="toolbar" aria-label="Alat menggambar">
-  <div class="group" role="group" aria-label="Alat">
-    <button type="button" id="tool-pen" aria-pressed="true" aria-label="Pena" title="Pena">🖊️</button>
-    <button type="button" id="tool-highlighter" aria-pressed="false" aria-label="Stabilo" title="Stabilo">🖍️</button>
-    <button type="button" id="tool-eraser" aria-pressed="false" aria-label="Penghapus" title="Penghapus">🧽</button>
-  </div>
-  <div class="group" role="group" aria-label="Warna">
-    <button type="button" class="swatch" data-color="#1f2937" style="background:#1f2937" aria-label="Hitam" aria-pressed="true"></button>
-    <button type="button" class="swatch" data-color="#dc2626" style="background:#dc2626" aria-label="Merah" aria-pressed="false"></button>
-    <button type="button" class="swatch" data-color="#2563eb" style="background:#2563eb" aria-label="Biru" aria-pressed="false"></button>
-    <button type="button" class="swatch" data-color="#059669" style="background:#059669" aria-label="Hijau" aria-pressed="false"></button>
-    <button type="button" class="swatch" data-color="#7c3aed" style="background:#7c3aed" aria-label="Ungu" aria-pressed="false"></button>
-    <button type="button" class="swatch" data-color="#ea580c" style="background:#ea580c" aria-label="Oranye" aria-pressed="false"></button>
-    <input type="color" id="custom-color" value="#1f2937" aria-label="Warna bebas">
-  </div>
-  <div class="group">
-    <label for="width">Tebal <span id="width-label">4</span> px</label>
-    <input type="range" id="width" min="2" max="24" value="4">
-  </div>
-  <div class="group">
-    <label for="background">Latar</label>
-    <select id="background">
-      <option value="plain">Polos</option>
-      <option value="grid">Kotak-kotak</option>
-      <option value="lines">Bergaris</option>
-      <option value="dots" selected>Titik-titik</option>
-    </select>
-  </div>
-  <div class="group" role="group" aria-label="Riwayat">
-    <button type="button" id="undo" disabled aria-label="Urungkan" title="Urungkan">↩️</button>
-    <button type="button" id="redo" disabled aria-label="Ulangi" title="Ulangi">↪️</button>
-    <button type="button" id="clear" aria-label="Hapus papan" title="Hapus papan">🗑️</button>
-  </div>
-  <div class="group">
-    <button type="button" id="export" aria-label="Simpan PNG" title="Simpan PNG">⬇️</button>
-    <button type="button" id="fullscreen" aria-pressed="false" aria-label="Layar penuh" title="Layar penuh">⛶</button>
-  </div>
 </div>
 
 <div id="stage" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas></div>
