@@ -57,6 +57,12 @@
   #stage.bg-dots { background-image: radial-gradient(circle, #94a3b8 1.5px, transparent 1.6px); background-size:28px 28px; background-position:-14px -14px; }
   canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; display:block; }
   footer { display:flex; flex-wrap:wrap; gap:.5rem; justify-content:space-between; align-items:center; padding:.45rem .75rem; background:var(--bar); border-top:1px solid #e2e8f0; font-size:.8rem; color:#64748b; }
+  /* Layar penuh: sembunyikan header/footer/panel akun supaya ruang menulis
+     di PID maksimal; tombol keluar layar penuh tetap ada di toolbar. Esc
+     juga keluar secara bawaan browser, dan kelas ini dilepas lewat
+     event fullscreenchange. */
+  body.is-fullscreen header, body.is-fullscreen footer,
+  body.is-fullscreen #login-panel, body.is-fullscreen #account-panels { display:none; }
   #status { color:#475569; }
   @media (max-width:640px) {
     header p { display:none; }
@@ -160,9 +166,17 @@
   </div>
   <div class="group">
     <button type="button" id="export">⬇️ Simpan PNG</button>
+    <button type="button" id="fullscreen" aria-pressed="false">⛶ Layar penuh</button>
   </div>
 </div>
 
+<div id="session-bar" class="page-bar" role="navigation" aria-label="Sesi papan">
+  <span class="page-label">Sesi:</span>
+  <select id="session-select" aria-label="Pilih sesi"></select>
+  <button type="button" id="session-add">+ Sesi baru</button>
+  <button type="button" id="session-rename">✏️ Ganti nama</button>
+  <button type="button" id="session-delete">🗑️ Hapus sesi</button>
+</div>
 <div id="page-bar" class="page-bar" role="navigation" aria-label="Halaman papan"></div>
 <div id="stage" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas></div>
 
@@ -317,6 +331,13 @@
     }
   });
   logoutBtn.addEventListener("click", async function () {
+    // Gerbang pindah akun: panel login disembunyikan saat sudah login, jadi
+    // keluar adalah satu-satunya jalan login akun lain. Sebut nama akunnya
+    // dengan jelas, dan jujur soal coretan yang belum sempat tersimpan ke
+    // server (debounce 400 ms): coretan itu tetap ada di perangkat ini dan
+    // bisa memicu dialog konflik saat akun lain login, bukan hilang diam-diam.
+    var name = currentUser ? currentUser.username : "";
+    if (!window.confirm("Keluar dari akun " + name + "?\n\nPapan yang sudah tersimpan di server tidak hilang. Coretan yang belum sempat tersimpan ke server tetap ada di perangkat ini, dan bisa memicu dialog konflik saat login akun lain.\n\nLanjutkan keluar?")) return;
     try { await fetch("/api/logout", { method: "POST", credentials: "same-origin" }); } catch (e) { /* abaikan */ }
     await refreshMe();
   });
@@ -367,53 +388,93 @@
   var stage = document.getElementById("stage");
   var ctx = canvas.getContext("2d");
   var statusEl = document.getElementById("status");
-  var STORAGE_KEY = "papantulis-pages-v2";
+  var STORAGE_KEY = "papantulis-sessions-v3";
+  var OLD_BOARD_KEY = "papantulis-pages-v2";
   var OLD_STORAGE_KEY = "papantulis-strokes-v1";
 
   var tool = "pen";
   var color = "#1f2937";
   var width = 4;
 
-  // Satu papan = satu daftar halaman. Tiap halaman punya coretan sendiri
-  // dan riwayat undo/redo sendiri (foto kondisi halaman itu).
+  // Satu sesi = satu papan multi-halaman. Tiap halaman punya coretan sendiri
+  // dan riwayat undo/redo sendiri (foto kondisi halaman itu), tapi hanya
+  // untuk sesi yang sedang aktif.
   var pageHistories = [{ history: [[]], index: 0 }];
   var currentPage = 0;
   var current = null; // goresan yang sedang digambar
+
+  // Daftar sesi di memori hanya menyimpan foto halaman, bukan riwayat undo:
+  // riwayat undo direset saat pindah sesi, supaya localStorage tidak
+  // membengkak dengan riwayat semua sesi.
+  var sessions = [{ id: "utama", name: "Papan utama", current: 0, pages: [[]] }];
+  var currentSessionId = "utama";
 
   function pageState() { return pageHistories[currentPage]; }
   function strokes() { var s = pageState(); return s.history[s.index]; }
 
   function setStatus(text) { statusEl.textContent = text; }
 
+  function currentSession() {
+    for (var i = 0; i < sessions.length; i++) if (sessions[i].id === currentSessionId) return sessions[i];
+    return sessions[0];
+  }
+  function newSessionId() {
+    return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+  function saveActiveSession() {
+    var s = currentSession();
+    if (!s) return;
+    s.current = currentPage;
+    s.pages = pageHistories.map(function (h) { return h.history[h.index]; });
+  }
+  function loadActiveSession() {
+    var s = currentSession();
+    var pages = (s && Array.isArray(s.pages) && s.pages.length) ? s.pages : [[]];
+    pageHistories = pages.map(function (p) { return { history: [Array.isArray(p) ? p : []], index: 0 }; });
+    currentPage = Math.min(Math.max(0, (s && s.current) || 0), pageHistories.length - 1);
+  }
+
   var serverStatusEl = document.getElementById("server-status");
   var serverSync = false; // true hanya bila pengguna sudah login
   var serverSaveTimer = null;
   function setServerStatus(text) { serverStatusEl.textContent = text || ""; }
-  function boardFromLocal() {
-    return { version: 2, current: currentPage, pages: pageHistories.map(function (s) { return s.history[s.index]; }) };
+  function sessionsFromLocal() {
+    saveActiveSession();
+    return { version: 3, currentId: currentSessionId, sessions: sessions };
   }
-  function isLocalEmpty() {
-    return pageHistories.length === 1 && pageHistories[0].history[pageHistories[0].index].length === 0;
+  function sessionsIsEmpty(data) {
+    if (!data || !Array.isArray(data.sessions)) return true;
+    return data.sessions.every(function (s) {
+      return Array.isArray(s.pages) && s.pages.every(function (p) { return Array.isArray(p) && p.length === 0; });
+    });
   }
-  function boardIsEmpty(board) {
-    return Array.isArray(board.pages) && board.pages.every(function (p) { return Array.isArray(p) && p.length === 0; });
-  }
-  function loadBoard(board) {
-    pageHistories = board.pages.map(function (p) { return { history: [Array.isArray(p) ? p : []], index: 0 }; });
-    currentPage = Math.min(Math.max(0, board.current || 0), pageHistories.length - 1);
+  function isLocalEmpty() { return sessionsIsEmpty(sessionsFromLocal()); }
+  function loadSessions(data) {
+    if (!data || !Array.isArray(data.sessions) || !data.sessions.length) return;
+    sessions = data.sessions.map(function (s) {
+      return {
+        id: s.id, name: s.name,
+        current: s.current || 0,
+        pages: (Array.isArray(s.pages) && s.pages.length) ? s.pages : [[]],
+      };
+    });
+    var found = false;
+    sessions.forEach(function (s) { if (s.id === data.currentId) found = true; });
+    currentSessionId = found ? data.currentId : sessions[0].id;
+    loadActiveSession();
   }
   function saveLocalOnly() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(boardFromLocal())); } catch (e) { /* penyimpanan penuh: papan tetap bisa dipakai */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionsFromLocal())); } catch (e) { /* penyimpanan penuh: papan tetap bisa dipakai */ }
   }
   function saveLocal() {
     saveLocalOnly();
     scheduleServerSave();
   }
-  async function putBoardToServer() {
-    var res = await fetch("/api/board", {
+  async function putSessionsToServer() {
+    var res = await fetch("/api/sessions", {
       method: "PUT", credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ board: boardFromLocal() }),
+      body: JSON.stringify({ sessions: sessionsFromLocal() }),
     });
     if (!res.ok) throw new Error("server " + res.status);
   }
@@ -421,7 +482,7 @@
     if (!serverSync) return;
     clearTimeout(serverSaveTimer);
     serverSaveTimer = setTimeout(async function () {
-      try { await putBoardToServer(); setServerStatus("☁️ Tersimpan di server"); }
+      try { await putSessionsToServer(); setServerStatus("☁️ Tersimpan di server"); }
       catch (e) { setServerStatus("⚠️ Gagal menyimpan ke server, akan dicoba lagi pada perubahan berikutnya"); }
     }, 400);
   }
@@ -442,37 +503,123 @@
   }
   async function syncFromServerInner() {
     var res;
-    try { res = await fetch("/api/board", { credentials: "same-origin" }); }
+    try { res = await fetch("/api/sessions", { credentials: "same-origin" }); }
     catch (e) { return; } // server tidak mode Bun: tetap lokal saja
     if (!res.ok) { serverSync = false; setServerStatus(""); return; }
     serverSync = true;
     var data = await res.json().catch(function () { return {}; });
-    var serverBoard = data.board || null;
-    if (!serverBoard || boardIsEmpty(serverBoard)) {
+    var serverSessions = data.sessions || null;
+    if (!serverSessions || sessionsIsEmpty(serverSessions)) {
       setServerStatus("☁️ Tersimpan di server");
       if (!isLocalEmpty()) {
-        try { await putBoardToServer(); } catch (e) { setServerStatus("⚠️ Gagal menyimpan ke server, akan dicoba lagi pada perubahan berikutnya"); }
+        try { await putSessionsToServer(); } catch (e) { setServerStatus("⚠️ Gagal menyimpan ke server, akan dicoba lagi pada perubahan berikutnya"); }
       }
       return;
     }
-    var localBoard = boardFromLocal();
-    if (JSON.stringify(localBoard) === JSON.stringify(serverBoard)) { setServerStatus("☁️ Tersimpan di server"); return; }
+    var localSessions = sessionsFromLocal();
+    if (JSON.stringify(localSessions) === JSON.stringify(serverSessions)) { setServerStatus("☁️ Tersimpan di server"); return; }
     if (isLocalEmpty()) {
-      loadBoard(serverBoard); saveLocalOnly(); renderPageBar(); redraw();
-      setServerStatus("☁️ Papan dari server dimuat"); setStatus("Papan dari server dimuat.");
+      loadSessions(serverSessions); saveLocalOnly(); renderSessionBar(); renderPageBar(); redraw();
+      setServerStatus("☁️ Sesi dari server dimuat"); setStatus("Sesi dari server dimuat.");
       return;
     }
-    if (window.confirm("Papan di server berbeda dengan papan di perangkat ini.\n\nTekan OK untuk memakai papan server (coretan di perangkat ini akan diganti).\nTekan Batal untuk menyimpan papan perangkat ini ke server (papan server akan diganti).")) {
-      loadBoard(serverBoard); saveLocalOnly(); renderPageBar(); redraw();
-      setServerStatus("☁️ Papan dari server dimuat"); setStatus("Papan dari server dimuat.");
+    if (window.confirm((authUserName ? "Sesi di server milik akun " + authUserName + " berbeda dengan sesi di perangkat ini.\n\n" : "Sesi di server berbeda dengan sesi di perangkat ini.\n\n") + "Tekan OK untuk memakai sesi server (sesi di perangkat ini akan diganti).\nTekan Batal untuk menyimpan sesi perangkat ini ke server (sesi server akan diganti).")) {
+      loadSessions(serverSessions); saveLocalOnly(); renderSessionBar(); renderPageBar(); redraw();
+      setServerStatus("☁️ Sesi dari server dimuat"); setStatus("Sesi dari server dimuat.");
     } else {
-      try { await putBoardToServer(); setServerStatus("☁️ Tersimpan di server"); }
+      try { await putSessionsToServer(); setServerStatus("☁️ Tersimpan di server"); }
       catch (e) { setServerStatus("⚠️ Gagal menyimpan ke server, akan dicoba lagi pada perubahan berikutnya"); }
     }
   }
+  var authUserName = "";
   window.addEventListener("papantulis:auth", function (e) {
-    if (e.detail && e.detail.user) { syncFromServer(); }
-    else { serverSync = false; clearTimeout(serverSaveTimer); setServerStatus(""); }
+    if (e.detail && e.detail.user) { authUserName = e.detail.user.username || ""; syncFromServer(); }
+    else { authUserName = ""; serverSync = false; clearTimeout(serverSaveTimer); setServerStatus(""); }
+  });
+
+  // ---------- bar sesi ----------
+  function renderSessionBar() {
+    var sel = document.getElementById("session-select");
+    sel.innerHTML = "";
+    sessions.forEach(function (s) {
+      var opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+    sel.value = currentSessionId;
+    document.getElementById("session-delete").disabled = sessions.length <= 1;
+  }
+  function switchSession(id) {
+    if (id === currentSessionId) return;
+    var target = null;
+    sessions.forEach(function (s) { if (s.id === id) target = s; });
+    if (!target) return;
+    current = null;
+    saveActiveSession();
+    currentSessionId = id;
+    loadActiveSession();
+    saveLocal();
+    renderSessionBar();
+    renderPageBar();
+    setStatus("Sesi " + target.name + " dibuka.");
+    redraw();
+  }
+  function validSessionName(name, exceptId) {
+    if (!name) return "Nama sesi tidak boleh kosong.";
+    if (name.length > 80) return "Nama sesi maksimal 80 karakter.";
+    var clash = false;
+    sessions.forEach(function (s) {
+      if (s.id !== exceptId && s.name.toLowerCase() === name.toLowerCase()) clash = true;
+    });
+    if (clash) return "Nama sesi sudah dipakai, pilih nama lain.";
+    return "";
+  }
+  document.getElementById("session-select").addEventListener("change", function (e) { switchSession(e.target.value); });
+  document.getElementById("session-add").addEventListener("click", function () {
+    if (sessions.length >= 20) { window.alert("Maksimal 20 sesi."); return; }
+    var name = window.prompt("Nama sesi baru (mis. PLSV - Pertemuan 1):", "");
+    if (name === null) return;
+    name = name.trim();
+    var err = validSessionName(name, null);
+    if (err) { window.alert(err); return; }
+    current = null;
+    saveActiveSession();
+    var s = { id: newSessionId(), name: name, current: 0, pages: [[]] };
+    sessions.push(s);
+    currentSessionId = s.id;
+    loadActiveSession();
+    saveLocal();
+    renderSessionBar();
+    renderPageBar();
+    setStatus("Sesi " + name + " dibuat dan dibuka.");
+    redraw();
+  });
+  document.getElementById("session-rename").addEventListener("click", function () {
+    var s = currentSession();
+    if (!s) return;
+    var name = window.prompt("Nama baru untuk sesi ini:", s.name);
+    if (name === null) return;
+    name = name.trim();
+    var err = validSessionName(name, s.id);
+    if (err) { window.alert(err); return; }
+    s.name = name;
+    saveLocal();
+    renderSessionBar();
+    setStatus("Sesi diganti namanya menjadi " + name + ".");
+  });
+  document.getElementById("session-delete").addEventListener("click", function () {
+    var s = currentSession();
+    if (!s || sessions.length <= 1) return;
+    if (!window.confirm("Hapus sesi " + s.name + " beserta semua halamannya?")) return;
+    sessions = sessions.filter(function (x) { return x.id !== s.id; });
+    currentSessionId = sessions[0].id;
+    loadActiveSession();
+    saveLocal();
+    renderSessionBar();
+    renderPageBar();
+    setStatus("Sesi " + s.name + " dihapus. Sekarang di sesi " + currentSession().name + ".");
+    redraw();
   });
 
   function renderPageBar() {
@@ -687,6 +834,28 @@
     a.click();
     setStatus("PNG Halaman " + (currentPage + 1) + " diunduh.");
   });
+  // Layar penuh: seluruh dokumen, bukan hanya canvas, supaya bilah alamat
+  // dan tab browser ikut hilang di PID. Keluar lewat tombol yang sama atau Esc.
+  var fullscreenBtn = document.getElementById("fullscreen");
+  function updateFullscreenButton() {
+    var active = !!document.fullscreenElement;
+    document.body.classList.toggle("is-fullscreen", active);
+    fullscreenBtn.textContent = active ? "⛶ Keluar layar penuh" : "⛶ Layar penuh";
+    fullscreenBtn.setAttribute("aria-pressed", String(active));
+    if (active) setStatus("Mode layar penuh. Tekan tombol yang sama atau Esc untuk keluar.");
+  }
+  document.addEventListener("fullscreenchange", updateFullscreenButton);
+  fullscreenBtn.addEventListener("click", function () {
+    try {
+      if (document.fullscreenElement) {
+        var out = document.exitFullscreen();
+        if (out && out.catch) out.catch(function () { /* abaikan, tombol tetap bisa ditekan lagi */ });
+      } else {
+        var req = document.documentElement.requestFullscreen();
+        if (req && req.catch) req.catch(function () { setStatus("Browser tidak mengizinkan layar penuh."); });
+      }
+    } catch (e) { setStatus("Browser ini tidak mendukung layar penuh."); }
+  });
   document.addEventListener("keydown", function (e) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
@@ -695,28 +864,37 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); document.getElementById("redo").click(); }
   });
 
-  // Muat halaman tersimpan, kalau ada. Coretan format lama (satu papan)
-  // dipindah jadi Halaman 1, tidak dibuang.
+  // Muat sesi tersimpan, kalau ada. Rantai migrasi lokal, tidak ada yang dibuang:
+  // sesi v3 -> dipakai langsung; papan v2 (satu papan, tanpa nama) -> menjadi
+  // satu sesi "Papan utama"; coretan v1 -> menjadi Halaman 1 sesi "Papan utama".
+  // Kunci lama dihapus setelah migrasi, supaya tidak dibaca dua kali.
   try {
-    var savedPages = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    if (savedPages && savedPages.version === 2 && Array.isArray(savedPages.pages) && savedPages.pages.length) {
-      pageHistories = savedPages.pages.map(function (p) { return { history: [Array.isArray(p) ? p : []], index: 0 }; });
-      currentPage = Math.min(Math.max(0, savedPages.current || 0), pageHistories.length - 1);
-      setStatus("Halaman sebelumnya dimuat dari perangkat ini.");
+    var savedSessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (savedSessions && savedSessions.version === 3 && Array.isArray(savedSessions.sessions) && savedSessions.sessions.length) {
+      loadSessions(savedSessions);
+      setStatus("Sesi sebelumnya dimuat dari perangkat ini.");
     } else {
-      var oldSaved = JSON.parse(localStorage.getItem(OLD_STORAGE_KEY) || "[]");
-      if (Array.isArray(oldSaved) && oldSaved.length) {
-        pageHistories = [{ history: [oldSaved], index: 0 }];
-        currentPage = 0;
-        try { localStorage.removeItem(OLD_STORAGE_KEY); } catch (e) { /* abaikan */ }
+      var savedBoard = JSON.parse(localStorage.getItem(OLD_BOARD_KEY) || "null");
+      if (savedBoard && savedBoard.version === 2 && Array.isArray(savedBoard.pages) && savedBoard.pages.length) {
+        loadSessions({ version: 3, currentId: "utama", sessions: [{ id: "utama", name: "Papan utama", current: savedBoard.current || 0, pages: savedBoard.pages }] });
+        try { localStorage.removeItem(OLD_BOARD_KEY); } catch (e) { /* abaikan */ }
         saveLocal();
-        setStatus("Coretan sebelumnya dipindah menjadi Halaman 1.");
+        setStatus("Papan sebelumnya dipindah menjadi sesi Papan utama.");
+      } else {
+        var oldSaved = JSON.parse(localStorage.getItem(OLD_STORAGE_KEY) || "[]");
+        if (Array.isArray(oldSaved) && oldSaved.length) {
+          loadSessions({ version: 3, currentId: "utama", sessions: [{ id: "utama", name: "Papan utama", current: 0, pages: [oldSaved] }] });
+          try { localStorage.removeItem(OLD_STORAGE_KEY); } catch (e) { /* abaikan */ }
+          saveLocal();
+          setStatus("Coretan sebelumnya dipindah menjadi sesi Papan utama.");
+        }
       }
     }
-  } catch (e) { /* abaikan data rusak, mulai dari papan kosong */ }
+  } catch (e) { /* abaikan data rusak, mulai dari sesi kosong */ }
+  renderSessionBar();
   renderPageBar();
-  // Bila sudah login (cookie sesi masih berlaku), muat / migrasikan papan server.
-  // Bila belum login, fetch ini 401 dan papan tetap lokal saja.
+  // Bila sudah login (cookie sesi masih berlaku), muat / migrasikan sesi server.
+  // Bila belum login, fetch ini 401 dan sesi tetap lokal saja.
   syncFromServer();
 
   var resizeTimer = null;

@@ -51,15 +51,67 @@ function validRole(role: string): boolean {
 
 // ---------- auth (pola GezyBoard) ----------
 
+// Pembatas percobaan login (di memori, cukup untuk instalasi satu proses ini):
+// 5 kali gagal dalam 15 menit untuk satu kombinasi IP + username -> kunci 15 menit.
+// Kunci per kombinasi, bukan per username saja, supaya penyerang tidak bisa
+// mengunci akun guru yang sah hanya dengan menebak-nebak sandinya. IP diambil
+// dari X-Forwarded-For bila ada proxy di depan (Caddy di VPS), bila tidak ada
+// jatuh ke "unknown" dan kunci tetap berlaku per username. Percobaan gagal
+// untuk username yang tidak ada pun dihitung, supaya tidak bisa dipakai
+// menguji daftar username tanpa batas. Sukses menghapus hitungan kunci itu.
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_BLOCK_MS = 15 * 60 * 1000;
+type LoginAttempt = { count: number; first: number; blockedUntil: number };
+const loginAttempts = new Map<string, LoginAttempt>();
+function loginAttemptKey(c: Context, username: string): string {
+  const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip = forwarded || c.req.header("x-real-ip") || "unknown";
+  return ip + "|" + username.toLowerCase();
+}
+function loginBlocked(key: string, now: number): boolean {
+  const rec = loginAttempts.get(key);
+  if (!rec) return false;
+  if (rec.blockedUntil > now) return true;
+  if (now - rec.first > LOGIN_WINDOW_MS) loginAttempts.delete(key);
+  return false;
+}
+function recordLoginFailure(key: string, now: number): void {
+  const rec = loginAttempts.get(key);
+  if (!rec || now - rec.first > LOGIN_WINDOW_MS) {
+    loginAttempts.set(key, { count: 1, first: now, blockedUntil: 0 });
+  } else {
+    rec.count += 1;
+    if (rec.count >= LOGIN_MAX_ATTEMPTS) rec.blockedUntil = now + LOGIN_BLOCK_MS;
+  }
+  // Jangan biarkan peta tumbuh tanpa batas bila diserang dengan banyak kunci.
+  if (loginAttempts.size > 1000) {
+    for (const [k, v] of loginAttempts) {
+      if (v.blockedUntil <= now && now - v.first > LOGIN_WINDOW_MS) loginAttempts.delete(k);
+    }
+  }
+}
+
 app.post("/api/login", async (c) => {
   const { username, password } = await c.req.json().catch(() => ({}));
-  const user = getUserByUsername(String(username || "").trim());
+  const name = String(username || "").trim();
+  const key = loginAttemptKey(c, name);
+  const now = Date.now();
+  if (loginBlocked(key, now)) {
+    return c.json({ ok: false, error: "Terlalu banyak percobaan login. Coba lagi dalam 15 menit." }, 429);
+  }
+  const user = getUserByUsername(name);
   if (!user || !(await verifyPassword(String(password || ""), user.password_hash))) {
+    recordLoginFailure(key, now);
     return c.json({ ok: false, error: "Username atau password salah." }, 401);
   }
+  loginAttempts.delete(key);
   const token = createSession(user.id);
+  // Secure: cookie sesi hanya dikirim lewat HTTPS di produksi. Uji lokal
+  // lewat http://localhost tetap jalan karena browser menganggap localhost
+  // sebagai secure context; uji lewat http://IP-lan tidak akan bisa login.
   setCookie(c, SESSION_COOKIE, token, {
-    httpOnly: true, path: "/", sameSite: "Lax", maxAge: 30 * 24 * 3600,
+    httpOnly: true, secure: true, path: "/", sameSite: "Lax", maxAge: 30 * 24 * 3600,
   });
   return c.json({ ok: true, user: publicUser(user) });
 });
@@ -67,7 +119,7 @@ app.post("/api/login", async (c) => {
 app.post("/api/logout", (c) => {
   const token = getCookie(c, SESSION_COOKIE);
   if (token) destroySession(token);
-  deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  deleteCookie(c, SESSION_COOKIE, { path: "/", secure: true });
   return c.json({ ok: true });
 });
 
@@ -84,15 +136,19 @@ app.get("/api/owner/status", (c) => {
   return c.json({ ok: true, user: u, note: "Login admin aktif. Papan pengguna yang login tersimpan di server." });
 });
 
-// ---------- papan di server (hanya pengguna yang login) ----------
-// Satu papan per pengguna, format sama dengan localStorage v2:
-// {version:2, current, pages}. Validasi ketat agar data rusak / raksasa
-// tidak merusak papan pengguna lain; tiap pengguna hanya melihat barisnya sendiri.
-function validBoard(board: any): boolean {
-  if (!board || typeof board !== "object" || board.version !== 2) return false;
-  if (!Array.isArray(board.pages) || board.pages.length < 1 || board.pages.length > 100) return false;
-  if (!Number.isInteger(board.current) || board.current < 0 || board.current >= board.pages.length) return false;
-  for (const page of board.pages) {
+// ---------- sesi di server (hanya pengguna yang login) ----------
+// Format v3, sama dengan localStorage baru:
+// {version:3, currentId, sessions:[{id, name, current, pages}]}.
+// Satu baris per pengguna di tabel user_boards (kolom data tidak berubah,
+// hanya isi JSON-nya). Validasi ketat agar data rusak / raksasa tidak
+// merusak papan pengguna lain; tiap pengguna hanya melihat barisnya sendiri.
+// Endpoint /api/board lama SENGAJA dihapus: klien lama yang masih tercache
+// akan gagal sinkron dan tetap lokal, bukan menimpa format sesi baru
+// dengan papan v2 tanpa nama.
+function validPages(pages: any, current: any): boolean {
+  if (!Array.isArray(pages) || pages.length < 1 || pages.length > 100) return false;
+  if (!Number.isInteger(current) || current < 0 || current >= pages.length) return false;
+  for (const page of pages) {
     if (!Array.isArray(page) || page.length > 5000) return false;
     for (const s of page) {
       if (!s || typeof s !== "object") return false;
@@ -108,29 +164,61 @@ function validBoard(board: any): boolean {
   }
   return true;
 }
+function validBoard(board: any): boolean {
+  if (!board || typeof board !== "object" || board.version !== 2) return false;
+  return validPages(board.pages, board.current);
+}
+function boardToSessions(board: any): any {
+  return {
+    version: 3, currentId: "utama",
+    sessions: [{ id: "utama", name: "Papan utama", current: board.current, pages: board.pages }],
+  };
+}
+function validSessions(data: any): boolean {
+  if (!data || typeof data !== "object" || data.version !== 3) return false;
+  if (typeof data.currentId !== "string" || !data.currentId) return false;
+  if (!Array.isArray(data.sessions) || data.sessions.length < 1 || data.sessions.length > 20) return false;
+  const ids = new Set<string>();
+  for (const s of data.sessions) {
+    if (!s || typeof s !== "object") return false;
+    if (typeof s.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(s.id) || ids.has(s.id)) return false;
+    ids.add(s.id);
+    if (typeof s.name !== "string" || s.name.trim().length < 1 || s.name.length > 80) return false;
+    if (!validPages(s.pages, s.current)) return false;
+  }
+  return ids.has(data.currentId);
+}
 
-app.get("/api/board", (c) => {
+app.get("/api/sessions", (c) => {
   const u = requireLogin(c);
   if (u instanceof Response) return u;
   const raw = getUserBoard(u.id);
-  if (!raw) return c.json({ ok: true, board: null });
+  if (!raw) return c.json({ ok: true, sessions: null });
   try {
-    const board = JSON.parse(raw);
-    if (!validBoard(board)) return c.json({ ok: true, board: null });
-    return c.json({ ok: true, board });
+    const parsed = JSON.parse(raw);
+    if (validSessions(parsed)) return c.json({ ok: true, sessions: parsed });
+    // Migrasi sekali jalan: papan v2 lama menjadi satu sesi "Papan utama".
+    if (validBoard(parsed)) {
+      const converted = boardToSessions(parsed);
+      saveUserBoard(u.id, JSON.stringify(converted));
+      return c.json({ ok: true, sessions: converted });
+    }
+    return c.json({ ok: true, sessions: null });
   } catch {
-    return c.json({ ok: true, board: null });
+    return c.json({ ok: true, sessions: null });
   }
 });
 
-app.put("/api/board", async (c) => {
+app.put("/api/sessions", async (c) => {
   const u = requireLogin(c);
   if (u instanceof Response) return u;
   const body = await c.req.json().catch(() => null);
-  const board = body && body.board;
-  if (!validBoard(board)) return c.json({ ok: false, error: "Data papan tidak valid." }, 400);
-  if (JSON.stringify(board).length > 2000000) return c.json({ ok: false, error: "Papan terlalu besar (maks. 2 MB)." }, 400);
-  saveUserBoard(u.id, JSON.stringify(board));
+  const data = body && body.sessions;
+  if (!validSessions(data)) return c.json({ ok: false, error: "Data sesi tidak valid." }, 400);
+  // Batas total naik dari 2 MB (satu papan) menjadi 5 MB (semua sesi),
+  // masih dalam kisaran kuota localStorage browser yang menyimpan salinan lokal.
+  if (JSON.stringify(data).length > 5000000) return c.json({ ok: false, error: "Total sesi terlalu besar (maks. 5 MB)." }, 400);
+  saveUserBoard(u.id, JSON.stringify(data));
   return c.json({ ok: true });
 });
 
