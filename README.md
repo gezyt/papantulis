@@ -7,7 +7,7 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
 - Coret bebas pakai jari, mouse, atau stylus (Pointer Events + Canvas 2D)
 - Pena, stabilo, dan penghapus
 - Pilihan warna + warna bebas, ketebalan 2–24 px
-- Latar polos, kotak-kotak, bergaris, atau titik-titik (persegi tanpa garis, titik hanya di sudut grid 28 px)
+- Latar polos, kotak-kotak, bergaris, atau titik-titik (persegi tanpa garis, titik hanya di sudut grid 28 px; default: Titik-titik)
 - Urungkan / ulangi (juga Ctrl+Z / Ctrl+Y)
 - Hapus papan (masih bisa diurungkan)
 - Simpan otomatis di perangkat ini (localStorage)
