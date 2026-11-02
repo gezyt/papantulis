@@ -33,6 +33,9 @@
   #stage { position:relative; flex:1; min-height:0; overflow:hidden; background:#fff; }
   #stage.bg-grid { background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size:28px 28px; }
   #stage.bg-lines { background-image: repeating-linear-gradient(transparent, transparent 31px, #dbeafe 32px); }
+  /* Titik-titik: persegi tanpa garis, titik hanya di sudut/perpotongan grid 28px yang
+     sama dengan latar kotak, supaya titik tidak loncat saat berganti latar. */
+  #stage.bg-dots { background-image: radial-gradient(circle, #94a3b8 1.5px, transparent 1.6px); background-size:28px 28px; background-position:-14px -14px; }
   canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; display:block; }
   footer { display:flex; flex-wrap:wrap; gap:.5rem; justify-content:space-between; align-items:center; padding:.45rem .75rem; background:var(--bar); border-top:1px solid #e2e8f0; font-size:.8rem; color:#64748b; }
   #status { color:#475569; }
@@ -90,6 +93,7 @@
       <option value="plain">Polos</option>
       <option value="grid">Kotak-kotak</option>
       <option value="lines">Bergaris</option>
+      <option value="dots">Titik-titik</option>
     </select>
   </div>
   <div class="group" role="group" aria-label="Riwayat">
@@ -310,9 +314,10 @@
     document.getElementById("width-label").textContent = String(width);
   });
   document.getElementById("background").addEventListener("change", function (e) {
-    stage.classList.remove("bg-grid", "bg-lines");
+    stage.classList.remove("bg-grid", "bg-lines", "bg-dots");
     if (e.target.value === "grid") stage.classList.add("bg-grid");
     if (e.target.value === "lines") stage.classList.add("bg-lines");
+    if (e.target.value === "dots") stage.classList.add("bg-dots");
   });
 
   document.getElementById("undo").addEventListener("click", function () {
