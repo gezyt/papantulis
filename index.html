@@ -15,6 +15,10 @@
   header p { margin:0; font-size:.8rem; color:#64748b; }
   #owner-area { margin-left:auto; display:flex; gap:.4rem; align-items:center; font-size:.85rem; }
   #login-panel { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.5rem .75rem; background:#eef2ff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
+  /* WAJIB: display:flex di atas mengalahkan [hidden] bawaan browser, jadi tanpa
+     aturan ini panel login selalu tampil walau hidden. Ini yang membuat form di
+     tangkapan layar Pak Gun tampil padahal tombol belum ditekan. */
+  #login-panel[hidden] { display:none; }
   #login-panel input { border:1px solid #cbd5e1; border-radius:8px; padding:.4rem .6rem; }
   #login-error { color:#dc2626; }
   .toolbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.5rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
