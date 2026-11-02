@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>PapanTulis — Papan Coretan Bebas</title>
+<meta name="description" content="Prototipe papan coretan bebas satu pengguna: tulis dan coret pakai jari, mouse, atau stylus.">
+<style>
+  :root { --ink:#1f2937; --accent:#4f46e5; --bar:#ffffff; --bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:var(--bg); display:flex; flex-direction:column; height:100dvh; overflow:hidden; }
+  header { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; padding:.55rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
+  header h1 { font-size:1.05rem; margin:0 .25rem 0 0; white-space:nowrap; }
+  header p { margin:0; font-size:.8rem; color:#64748b; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.5rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
+  .group { display:flex; gap:.3rem; align-items:center; padding-right:.5rem; border-right:1px solid #e2e8f0; }
+  .group:last-child { border-right:none; }
+  button { border:1px solid #cbd5e1; background:#fff; border-radius:999px; padding:.4rem .8rem; cursor:pointer; font-size:.9rem; }
+  button:hover { border-color:var(--accent); }
+  button[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  .swatch { width:28px; height:28px; border-radius:50%; padding:0; border:2px solid #fff; outline:1px solid #cbd5e1; }
+  .swatch[aria-pressed="true"] { outline:2px solid var(--accent); outline-offset:1px; }
+  label { font-size:.85rem; color:#475569; }
+  input[type="range"] { width:110px; accent-color:var(--accent); }
+  input[type="color"] { width:34px; height:30px; padding:0; border:1px solid #cbd5e1; border-radius:8px; background:#fff; }
+  select { border:1px solid #cbd5e1; border-radius:8px; padding:.4rem; background:#fff; }
+  #stage { position:relative; flex:1; min-height:0; overflow:hidden; background:#fff; }
+  #stage.bg-grid { background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size:28px 28px; }
+  #stage.bg-lines { background-image: repeating-linear-gradient(transparent, transparent 31px, #dbeafe 32px); }
+  canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; display:block; }
+  footer { display:flex; flex-wrap:wrap; gap:.5rem; justify-content:space-between; align-items:center; padding:.45rem .75rem; background:var(--bar); border-top:1px solid #e2e8f0; font-size:.8rem; color:#64748b; }
+  #status { color:#475569; }
+  @media (max-width:640px) {
+    header p { display:none; }
+    input[type="range"] { width:80px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>✏️ PapanTulis</h1>
+  <p>Coret bebas pakai jari, mouse, atau stylus. Satu pengguna, tersimpan otomatis di perangkat ini.</p>
+</header>
+
+<div class="toolbar" role="toolbar" aria-label="Alat menggambar">
+  <div class="group" role="group" aria-label="Alat">
+    <button type="button" id="tool-pen" aria-pressed="true">🖊️ Pena</button>
+    <button type="button" id="tool-highlighter" aria-pressed="false">🖍️ Stabilo</button>
+    <button type="button" id="tool-eraser" aria-pressed="false">🧽 Penghapus</button>
+  </div>
+  <div class="group" role="group" aria-label="Warna">
+    <button type="button" class="swatch" data-color="#1f2937" style="background:#1f2937" aria-label="Hitam" aria-pressed="true"></button>
+    <button type="button" class="swatch" data-color="#dc2626" style="background:#dc2626" aria-label="Merah" aria-pressed="false"></button>
+    <button type="button" class="swatch" data-color="#2563eb" style="background:#2563eb" aria-label="Biru" aria-pressed="false"></button>
+    <button type="button" class="swatch" data-color="#059669" style="background:#059669" aria-label="Hijau" aria-pressed="false"></button>
+    <button type="button" class="swatch" data-color="#7c3aed" style="background:#7c3aed" aria-label="Ungu" aria-pressed="false"></button>
+    <button type="button" class="swatch" data-color="#ea580c" style="background:#ea580c" aria-label="Oranye" aria-pressed="false"></button>
+    <input type="color" id="custom-color" value="#1f2937" aria-label="Warna bebas">
+  </div>
+  <div class="group">
+    <label for="width">Tebal <span id="width-label">4</span> px</label>
+    <input type="range" id="width" min="2" max="24" value="4">
+  </div>
+  <div class="group">
+    <label for="background">Latar</label>
+    <select id="background">
+      <option value="plain">Polos</option>
+      <option value="grid">Kotak-kotak</option>
+      <option value="lines">Bergaris</option>
+    </select>
+  </div>
+  <div class="group" role="group" aria-label="Riwayat">
+    <button type="button" id="undo" disabled>↩️ Urungkan</button>
+    <button type="button" id="redo" disabled>↪️ Ulangi</button>
+    <button type="button" id="clear">🗑️ Hapus papan</button>
+  </div>
+  <div class="group">
+    <button type="button" id="export">⬇️ Simpan PNG</button>
+  </div>
+</div>
+
+<div id="stage"><canvas id="board" aria-label="Papan coretan"></canvas></div>
+
+<footer>
+  <span id="status">Siap menggambar.</span>
+  <span>© 2026 GezyTech App · Dikembangkan oleh PakGun · Dilarang menyalin/menduplikat kode tanpa izin tertulis.</span>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var canvas = document.getElementById("board");
+  var stage = document.getElementById("stage");
+  var ctx = canvas.getContext("2d");
+  var statusEl = document.getElementById("status");
+  var STORAGE_KEY = "papantulis-strokes-v1";
+
+  var tool = "pen";
+  var color = "#1f2937";
+  var width = 4;
+
+  // Riwayat sebagai foto kondisi papan (cocok untuk prototipe satu pengguna).
+  var history = [[]];
+  var historyIndex = 0;
+  var current = null; // goresan yang sedang digambar
+
+  function strokes() { return history[historyIndex]; }
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function saveLocal() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(strokes())); } catch (e) { /* penyimpanan penuh: papan tetap bisa dipakai */ }
+  }
+
+  function resize() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = stage.clientWidth, h = stage.clientHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    redraw();
+  }
+
+  function drawStroke(s) {
+    if (!s.points.length) return;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    if (s.tool === "eraser") {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.strokeStyle = "rgba(0,0,0,1)";
+      ctx.globalAlpha = 1;
+    } else if (s.tool === "highlighter") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = 0.35;
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = 1;
+    }
+    ctx.lineWidth = s.width;
+    ctx.beginPath();
+    if (s.points.length === 1) {
+      var p = s.points[0];
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + 0.01, p.y + 0.01);
+    } else {
+      ctx.moveTo(s.points[0].x, s.points[0].y);
+      for (var i = 1; i < s.points.length - 1; i++) {
+        var mx = (s.points[i].x + s.points[i + 1].x) / 2;
+        var my = (s.points[i].y + s.points[i + 1].y) / 2;
+        ctx.quadraticCurveTo(s.points[i].x, s.points[i].y, mx, my);
+      }
+      var last = s.points[s.points.length - 1];
+      ctx.lineTo(last.x, last.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function redraw() {
+    ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+    strokes().forEach(drawStroke);
+    if (current) drawStroke(current);
+    document.getElementById("undo").disabled = historyIndex === 0;
+    document.getElementById("redo").disabled = historyIndex === history.length - 1;
+  }
+
+  function commit(nextStrokes, note) {
+    history = history.slice(0, historyIndex + 1);
+    history.push(nextStrokes);
+    historyIndex = history.length - 1;
+    saveLocal();
+    setStatus(note || "Tersimpan otomatis di perangkat ini.");
+    redraw();
+  }
+
+  function pos(e) {
+    var r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pressure || 0.5 };
+  }
+
+  canvas.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    current = { tool: tool, color: color, width: tool === "highlighter" ? Math.max(width, 10) : width, points: [pos(e)] };
+    redraw();
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    if (!current) return;
+    e.preventDefault();
+    current.points.push(pos(e));
+    redraw();
+  });
+  function endStroke(e) {
+    if (!current) return;
+    if (e && e.type === "pointermove") return;
+    var done = current;
+    current = null;
+    if (done.points.length) commit(strokes().concat([done]), "Tersimpan otomatis di perangkat ini.");
+  }
+  canvas.addEventListener("pointerup", endStroke);
+  canvas.addEventListener("pointercancel", function () { current = null; redraw(); });
+
+  function setTool(next) {
+    tool = next;
+    ["pen", "highlighter", "eraser"].forEach(function (t) {
+      document.getElementById("tool-" + t).setAttribute("aria-pressed", String(t === next));
+    });
+  }
+  document.getElementById("tool-pen").addEventListener("click", function () { setTool("pen"); });
+  document.getElementById("tool-highlighter").addEventListener("click", function () { setTool("highlighter"); });
+  document.getElementById("tool-eraser").addEventListener("click", function () { setTool("eraser"); });
+
+  document.querySelectorAll(".swatch").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      color = btn.getAttribute("data-color");
+      document.getElementById("custom-color").value = color;
+      document.querySelectorAll(".swatch").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b === btn));
+      });
+    });
+  });
+  document.getElementById("custom-color").addEventListener("input", function (e) {
+    color = e.target.value;
+    document.querySelectorAll(".swatch").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-color") === color));
+    });
+  });
+  document.getElementById("width").addEventListener("input", function (e) {
+    width = parseInt(e.target.value, 10);
+    document.getElementById("width-label").textContent = String(width);
+  });
+  document.getElementById("background").addEventListener("change", function (e) {
+    stage.classList.remove("bg-grid", "bg-lines");
+    if (e.target.value === "grid") stage.classList.add("bg-grid");
+    if (e.target.value === "lines") stage.classList.add("bg-lines");
+  });
+
+  document.getElementById("undo").addEventListener("click", function () {
+    if (historyIndex > 0) { historyIndex--; saveLocal(); setStatus("Satu goresan diurungkan."); redraw(); }
+  });
+  document.getElementById("redo").addEventListener("click", function () {
+    if (historyIndex < history.length - 1) { historyIndex++; saveLocal(); setStatus("Satu goresan diulangi."); redraw(); }
+  });
+  document.getElementById("clear").addEventListener("click", function () {
+    if (!strokes().length) return;
+    if (!window.confirm("Hapus semua coretan di papan ini? Masih bisa diurungkan.")) return;
+    commit([], "Papan dikosongkan. Tekan Urungkan untuk mengembalikan.");
+  });
+  document.getElementById("export").addEventListener("click", function () {
+    var out = document.createElement("canvas");
+    out.width = canvas.width; out.height = canvas.height;
+    var octx = out.getContext("2d");
+    octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, out.width, out.height);
+    octx.drawImage(canvas, 0, 0);
+    var a = document.createElement("a");
+    a.download = "papantulis.png";
+    a.href = out.toDataURL("image/png");
+    a.click();
+    setStatus("PNG diunduh.");
+  });
+  document.addEventListener("keydown", function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) document.getElementById("redo").click(); else document.getElementById("undo").click();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); document.getElementById("redo").click(); }
+  });
+
+  // Muat coretan tersimpan, kalau ada.
+  try {
+    var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    if (Array.isArray(saved) && saved.length) { history = [saved]; historyIndex = 0; setStatus("Coretan sebelumnya dimuat dari perangkat ini."); }
+  } catch (e) { /* abaikan data rusak, mulai dari papan kosong */ }
+
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 120);
+  });
+  resize();
+})();
+</script>
+</body>
+</html>
