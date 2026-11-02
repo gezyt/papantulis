@@ -159,6 +159,8 @@
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok) { errorEl.textContent = data.error || "Username atau password salah."; return; }
       document.getElementById("login-password").value = "";
+      // Setelah sukses login form langsung disembunyikan, tidak menunggu /api/me.
+      panel.hidden = true;
       await refreshMe();
     } catch (err) {
       errorEl.textContent = "Server belum menjalankan mode Bun (endpoint /api/login tidak ditemukan).";
