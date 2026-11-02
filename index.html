@@ -67,7 +67,7 @@
 <body>
 <header>
   <h1>✏️ PapanTulis</h1>
-  <p>Coret bebas pakai jari, mouse, atau stylus. Tanpa login pun papan tetap bisa dipakai; tersimpan otomatis di perangkat ini.</p>
+  <p>Coret bebas pakai jari, mouse, atau stylus. Tanpa login pun papan tetap bisa dipakai dan tersimpan di perangkat ini; setelah login, papan tersimpan di server dan bisa dibuka di perangkat lain.</p>
   <div id="owner-area">
     <span id="owner-label">Belum login</span>
     <button type="button" id="login-toggle">Login pemilik</button>
@@ -85,7 +85,7 @@
     <button type="submit">Masuk</button>
     <span id="login-error" role="alert"></span>
   </form>
-  <span style="color:#475569">Tidak ada daftar publik. Akun pertama dibuat lewat skrip di server; setelah login sebagai admin, akun baru bisa ditambah lewat panel Kelola Akun di bawah. Coretan masih tersimpan di browser.</span>
+  <span style="color:#475569">Tidak ada daftar publik. Akun pertama dibuat lewat skrip di server; setelah login sebagai admin, akun baru bisa ditambah lewat panel Kelola Akun di bawah. Setelah login, papan tersimpan di server; tanpa login, papan hanya tersimpan di browser.</span>
 </div>
 
 <div id="account-panels" hidden>
@@ -168,6 +168,7 @@
 
 <footer>
   <span id="status">Siap menggambar.</span>
+  <span id="server-status"></span>
   <span>© 2026 GezyTech App · Dikembangkan oleh PakGun · Dilarang menyalin/menduplikat kode tanpa izin tertulis.</span>
 </footer>
 
@@ -211,6 +212,8 @@
       } else {
         adminPanel.hidden = true;
       }
+      // Beri tahu skrip gambar: pengguna sudah login, papan boleh disinkronkan ke server.
+      window.dispatchEvent(new CustomEvent("papantulis:auth", { detail: { user: data.user } }));
     } catch (e) {
       currentUser = null;
       label.textContent = "Belum login";
@@ -220,6 +223,7 @@
       accountPanels.hidden = true;
       myPanel.hidden = true;
       adminPanel.hidden = true;
+      window.dispatchEvent(new CustomEvent("papantulis:auth", { detail: { user: null } }));
     }
   }
 
@@ -381,12 +385,95 @@
 
   function setStatus(text) { statusEl.textContent = text; }
 
-  function saveLocal() {
-    try {
-      var pages = pageHistories.map(function (s) { return s.history[s.index]; });
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, current: currentPage, pages: pages }));
-    } catch (e) { /* penyimpanan penuh: papan tetap bisa dipakai */ }
+  var serverStatusEl = document.getElementById("server-status");
+  var serverSync = false; // true hanya bila pengguna sudah login
+  var serverSaveTimer = null;
+  function setServerStatus(text) { serverStatusEl.textContent = text || ""; }
+  function boardFromLocal() {
+    return { version: 2, current: currentPage, pages: pageHistories.map(function (s) { return s.history[s.index]; }) };
   }
+  function isLocalEmpty() {
+    return pageHistories.length === 1 && pageHistories[0].history[pageHistories[0].index].length === 0;
+  }
+  function boardIsEmpty(board) {
+    return Array.isArray(board.pages) && board.pages.every(function (p) { return Array.isArray(p) && p.length === 0; });
+  }
+  function loadBoard(board) {
+    pageHistories = board.pages.map(function (p) { return { history: [Array.isArray(p) ? p : []], index: 0 }; });
+    currentPage = Math.min(Math.max(0, board.current || 0), pageHistories.length - 1);
+  }
+  function saveLocalOnly() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(boardFromLocal())); } catch (e) { /* penyimpanan penuh: papan tetap bisa dipakai */ }
+  }
+  function saveLocal() {
+    saveLocalOnly();
+    scheduleServerSave();
+  }
+  async function putBoardToServer() {
+    var res = await fetch("/api/board", {
+      method: "PUT", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ board: boardFromLocal() }),
+    });
+    if (!res.ok) throw new Error("server " + res.status);
+  }
+  function scheduleServerSave() {
+    if (!serverSync) return;
+    clearTimeout(serverSaveTimer);
+    serverSaveTimer = setTimeout(async function () {
+      try { await putBoardToServer(); setServerStatus("☁️ Tersimpan di server"); }
+      catch (e) { setServerStatus("⚠️ Gagal menyimpan ke server, akan dicoba lagi pada perubahan berikutnya"); }
+    }, 400);
+  }
+  // Sinkron saat halaman dibuka / setelah login. Aturan tanpa kehilangan diam-diam:
+  // server kosong + lokal berisi -> lokal diunggah (migrasi); lokal kosong -> server dimuat;
+  // keduanya berisi dan berbeda -> tanya pengguna, OK = pakai server, Batal = lokal menimpa server.
+  // Penjaga ganda: sinkron awal dan event login bisa datang berdekatan; jangan
+  // sampai dua dialog konflik muncul bersamaan.
+  var serverSyncRunning = false, serverSyncPending = false;
+  async function syncFromServer() {
+    if (serverSyncRunning) { serverSyncPending = true; return; }
+    serverSyncRunning = true;
+    try { await syncFromServerInner(); }
+    finally {
+      serverSyncRunning = false;
+      if (serverSyncPending) { serverSyncPending = false; syncFromServer(); }
+    }
+  }
+  async function syncFromServerInner() {
+    var res;
+    try { res = await fetch("/api/board", { credentials: "same-origin" }); }
+    catch (e) { return; } // server tidak mode Bun: tetap lokal saja
+    if (!res.ok) { serverSync = false; setServerStatus(""); return; }
+    serverSync = true;
+    var data = await res.json().catch(function () { return {}; });
+    var serverBoard = data.board || null;
+    if (!serverBoard || boardIsEmpty(serverBoard)) {
+      setServerStatus("☁️ Tersimpan di server");
+      if (!isLocalEmpty()) {
+        try { await putBoardToServer(); } catch (e) { setServerStatus("⚠️ Gagal menyimpan ke server, akan dicoba lagi pada perubahan berikutnya"); }
+      }
+      return;
+    }
+    var localBoard = boardFromLocal();
+    if (JSON.stringify(localBoard) === JSON.stringify(serverBoard)) { setServerStatus("☁️ Tersimpan di server"); return; }
+    if (isLocalEmpty()) {
+      loadBoard(serverBoard); saveLocalOnly(); renderPageBar(); redraw();
+      setServerStatus("☁️ Papan dari server dimuat"); setStatus("Papan dari server dimuat.");
+      return;
+    }
+    if (window.confirm("Papan di server berbeda dengan papan di perangkat ini.\n\nTekan OK untuk memakai papan server (coretan di perangkat ini akan diganti).\nTekan Batal untuk menyimpan papan perangkat ini ke server (papan server akan diganti).")) {
+      loadBoard(serverBoard); saveLocalOnly(); renderPageBar(); redraw();
+      setServerStatus("☁️ Papan dari server dimuat"); setStatus("Papan dari server dimuat.");
+    } else {
+      try { await putBoardToServer(); setServerStatus("☁️ Tersimpan di server"); }
+      catch (e) { setServerStatus("⚠️ Gagal menyimpan ke server, akan dicoba lagi pada perubahan berikutnya"); }
+    }
+  }
+  window.addEventListener("papantulis:auth", function (e) {
+    if (e.detail && e.detail.user) { syncFromServer(); }
+    else { serverSync = false; clearTimeout(serverSaveTimer); setServerStatus(""); }
+  });
 
   function renderPageBar() {
     var bar = document.getElementById("page-bar");
@@ -628,6 +715,9 @@
     }
   } catch (e) { /* abaikan data rusak, mulai dari papan kosong */ }
   renderPageBar();
+  // Bila sudah login (cookie sesi masih berlaku), muat / migrasikan papan server.
+  // Bila belum login, fetch ini 401 dan papan tetap lokal saja.
+  syncFromServer();
 
   var resizeTimer = null;
   window.addEventListener("resize", function () {

@@ -29,6 +29,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Papan milik tiap pengguna yang login: satu baris per pengguna, berisi
+-- JSON {version:2, current, pages} yang sama dengan format localStorage v2.
+-- Pengguna tanpa login tidak punya baris di sini; coretannya tetap lokal.
+CREATE TABLE IF NOT EXISTS user_boards (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now')) NOT NULL
+);
 `);
 
 // Migrasi peran: DB lama belum punya kolom role. Tambah kolom, lalu jadikan
@@ -43,6 +52,14 @@ if (!userCols.some((c) => c.name === "role")) {
   if (adminCount === 0) {
     db.prepare("UPDATE users SET role = 'admin' WHERE id = (SELECT MIN(id) FROM users)").run();
   }
+}
+
+export function getUserBoard(userId: number): string | null {
+  const row = db.prepare("SELECT data FROM user_boards WHERE user_id = ?").get(userId) as { data: string } | undefined;
+  return row ? row.data : null;
+}
+export function saveUserBoard(userId: number, data: string): void {
+  db.prepare("INSERT INTO user_boards (user_id, data, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = datetime('now')").run(userId, data);
 }
 
 export interface User { id: number; username: string; password_hash: string; role: string; created_at: string }

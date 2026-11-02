@@ -45,7 +45,8 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
 - Hash sandi tidak pernah dikembalikan ke klien.
 - Endpoint: `POST /api/login`, `POST /api/logout`, `GET /api/me`,
   `GET /api/owner/status` (hanya admin), `GET/POST /api/users` (admin),
-  `PATCH/DELETE /api/users/:id` (admin), `POST /api/me/password` (login).
+  `PATCH/DELETE /api/users/:id` (admin), `POST /api/me/password` (login),
+  `GET/PUT /api/board` (login, papan milik sendiri).
 
 ### Menjalankan lokal
 
@@ -72,16 +73,28 @@ bila pernah tersebar. Database `data/papantulis.db` tidak ikut commit (lihat `.g
    menampilkan pesan bahwa server belum menjalankan mode Bun; coretan
    tetap bisa dipakai karena masih tersimpan di browser.
 
-## Batas fase ini — dibaca dulu sebelum mengira sudah "di mana saja"
+## Simpan di server (pengguna yang login)
 
-Login saja **belum** memindahkan coretan ke server. Coretan fase ini masih
-tersimpan di browser perangkat yang dipakai, jadi belum bisa dibuka dari
-perangkat lain. Simpan papan di server + tautan berbagi adalah fase berikut.
+- Satu papan per pengguna, tersimpan di tabel `user_boards` sebagai JSON
+  `{version:2, current, pages}` yang sama dengan format localStorage v2.
+- Endpoint (wajib login): `GET /api/board`, `PUT /api/board`. Validasi
+  server: format v2, maks. 100 halaman, maks. 5000 coretan/halaman, maks.
+  2 MB; tiap pengguna hanya bisa membaca/menulis barisnya sendiri.
+- Klien: setiap perubahan papan disimpan lokal dulu, lalu disinkronkan ke
+  server (debounce ±400 ms, indikator di footer: ☁️ Tersimpan di server).
+  Saat dibuka / setelah login: server kosong + lokal berisi -> lokal
+  diunggah; lokal kosong -> papan server dimuat; keduanya berisi dan
+  berbeda -> pengguna ditanya (OK = pakai server, Batal = lokal menimpa
+  server). Tidak ada penimpaan diam-diam.
+- **Tanpa login, papan tetap hanya di browser perangkat itu** (seperti
+  sebelumnya). Tautan berbagi / mode view-only untuk siswa adalah fase
+  berikut, belum dibangun.
 
 ## Rencana berikut (belum dibangun)
 
-- Simpan papan di server (tabel papan + goresan) agar bisa dibuka kapan saja di mana saja
 - Tautan berbagi ala GezyBoard: pemilik login, pengunjung tanpa login
+  (termasuk mode view-only dan tautan berpassword/kedaluwarsa agar tidak
+  bisa divandalisme)
 - Multi-pengguna real-time via WebSocket (pola GezyBoard)
 - Teks, bentuk, dan undo per goresan berbasis model data
 

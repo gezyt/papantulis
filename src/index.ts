@@ -8,6 +8,7 @@ import {
   getUserByUsername, getUserById, listUsers, createUser, updateUser, updateUserPassword, deleteUser,
   publicUser,
 } from "./auth";
+import { getUserBoard, saveUserBoard } from "./db";
 
 // Port default 3101: sengaja beda dari GezyBoard (3100) agar bisa jalan berdampingan di VPS yang sama.
 const PORT = Number(process.env.PORT || 3101);
@@ -80,7 +81,57 @@ app.get("/api/me", (c) => {
 app.get("/api/owner/status", (c) => {
   const u = requireAdmin(c);
   if (u instanceof Response) return u;
-  return c.json({ ok: true, user: u, note: "Login admin aktif. Coretan fase ini masih tersimpan di browser; simpan server menyusul." });
+  return c.json({ ok: true, user: u, note: "Login admin aktif. Papan pengguna yang login tersimpan di server." });
+});
+
+// ---------- papan di server (hanya pengguna yang login) ----------
+// Satu papan per pengguna, format sama dengan localStorage v2:
+// {version:2, current, pages}. Validasi ketat agar data rusak / raksasa
+// tidak merusak papan pengguna lain; tiap pengguna hanya melihat barisnya sendiri.
+function validBoard(board: any): boolean {
+  if (!board || typeof board !== "object" || board.version !== 2) return false;
+  if (!Array.isArray(board.pages) || board.pages.length < 1 || board.pages.length > 100) return false;
+  if (!Number.isInteger(board.current) || board.current < 0 || board.current >= board.pages.length) return false;
+  for (const page of board.pages) {
+    if (!Array.isArray(page) || page.length > 5000) return false;
+    for (const s of page) {
+      if (!s || typeof s !== "object") return false;
+      if (!["pen", "highlighter", "eraser"].includes(s.tool)) return false;
+      if (typeof s.color !== "string" || s.color.length > 32) return false;
+      if (typeof s.width !== "number" || !Number.isFinite(s.width) || s.width < 1 || s.width > 100) return false;
+      if (!Array.isArray(s.points) || s.points.length < 1 || s.points.length > 10000) return false;
+      for (const p of s.points) {
+        if (!p || typeof p.x !== "number" || typeof p.y !== "number" || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
+        if (p.p !== undefined && (typeof p.p !== "number" || !Number.isFinite(p.p))) return false;
+      }
+    }
+  }
+  return true;
+}
+
+app.get("/api/board", (c) => {
+  const u = requireLogin(c);
+  if (u instanceof Response) return u;
+  const raw = getUserBoard(u.id);
+  if (!raw) return c.json({ ok: true, board: null });
+  try {
+    const board = JSON.parse(raw);
+    if (!validBoard(board)) return c.json({ ok: true, board: null });
+    return c.json({ ok: true, board });
+  } catch {
+    return c.json({ ok: true, board: null });
+  }
+});
+
+app.put("/api/board", async (c) => {
+  const u = requireLogin(c);
+  if (u instanceof Response) return u;
+  const body = await c.req.json().catch(() => null);
+  const board = body && body.board;
+  if (!validBoard(board)) return c.json({ ok: false, error: "Data papan tidak valid." }, 400);
+  if (JSON.stringify(board).length > 2000000) return c.json({ ok: false, error: "Papan terlalu besar (maks. 2 MB)." }, 400);
+  saveUserBoard(u.id, JSON.stringify(board));
+  return c.json({ ok: true });
 });
 
 // ---------- kelola akun (hanya admin) ----------
