@@ -120,6 +120,11 @@
     <button type="button" id="tool-pen" aria-pressed="true" aria-label="Pena" title="Pena">🖊️</button>
     <button type="button" id="tool-highlighter" aria-pressed="false" aria-label="Stabilo" title="Stabilo">🖍️</button>
     <button type="button" id="tool-eraser" aria-pressed="false" aria-label="Penghapus" title="Penghapus">🧽</button>
+    <button type="button" id="tool-line" aria-pressed="false" aria-label="Garis lurus" title="Garis lurus">╱</button>
+    <button type="button" id="tool-arrow" aria-pressed="false" aria-label="Garis panah" title="Garis panah">↗</button>
+    <button type="button" id="tool-rect" aria-pressed="false" aria-label="Persegi panjang" title="Persegi panjang">▭</button>
+    <button type="button" id="tool-circle" aria-pressed="false" aria-label="Lingkaran" title="Lingkaran">○</button>
+    <button type="button" id="tool-triangle" aria-pressed="false" aria-label="Segitiga" title="Segitiga">△</button>
   </div>
   <div class="group" role="group" aria-label="Warna">
     <button type="button" class="swatch" data-color="#1f2937" style="background:#1f2937" aria-label="Hitam" aria-pressed="true"></button>
@@ -421,6 +426,11 @@
   var OLD_STORAGE_KEY = "papantulis-strokes-v1";
 
   var tool = "pen";
+  // Alat bentuk: satu goresan = tepat 2 titik (titik awal dan titik akhir
+  // seretan). Lingkaran di sini lingkaran sejati: pusatnya titik tengah
+  // seretan, jari-jarinya setengah jarak seretan. Segitiga puncaknya di
+  // tengah atas kotak seretan, alasnya sisi bawah kotak itu.
+  var SHAPES = ["line", "arrow", "rect", "circle", "triangle"];
   var color = "#1f2937";
   var width = 4;
 
@@ -744,6 +754,42 @@
       ctx.globalAlpha = 1;
     }
     ctx.lineWidth = s.width;
+    // Bentuk: gambar dari titik awal ke titik akhir seretan, bukan
+    // mengikuti tiap titik seperti pena. Bentuk yang sudah tersimpan
+    // tetap satu goresan, jadi satu kali Urungkan menghapusnya utuh.
+    if (SHAPES.indexOf(s.tool) >= 0 && s.points.length >= 2) {
+      var a = s.points[0], b = s.points[s.points.length - 1];
+      ctx.beginPath();
+      if (s.tool === "line") {
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      } else if (s.tool === "arrow") {
+        var ang = Math.atan2(b.y - a.y, b.x - a.x);
+        var hl = Math.max(14, s.width * 3);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x - hl * Math.cos(ang - 0.45), b.y - hl * Math.sin(ang - 0.45));
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x - hl * Math.cos(ang + 0.45), b.y - hl * Math.sin(ang + 0.45));
+      } else if (s.tool === "rect") {
+        ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      } else if (s.tool === "circle") {
+        var cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+        var r = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)) / 2;
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      } else if (s.tool === "triangle") {
+        var minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
+        var minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
+        ctx.moveTo((minX + maxX) / 2, minY);
+        ctx.lineTo(minX, maxY);
+        ctx.lineTo(maxX, maxY);
+        ctx.closePath();
+      }
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     ctx.beginPath();
     if (s.points.length === 1) {
       var p = s.points[0];
@@ -796,7 +842,11 @@
   canvas.addEventListener("pointermove", function (e) {
     if (!current) return;
     e.preventDefault();
-    current.points.push(pos(e));
+    // Bentuk: pratinjau langsung, titik akhirnya diganti terus selama
+    // diseret (bukan ditambah), supaya bentuknya membesar/mengecil
+    // mengikuti seretan dan hasil akhirnya tetap 2 titik.
+    if (SHAPES.indexOf(current.tool) >= 0) current.points = [current.points[0], pos(e)];
+    else current.points.push(pos(e));
     redraw();
   });
   function endStroke(e) {
@@ -804,6 +854,13 @@
     if (e && e.type === "pointermove") return;
     var done = current;
     current = null;
+    // Seretan bentuk yang terlalu pendek (hanya ketukan) dibuang, supaya
+    // tidak meninggalkan goresan tak terlihat di riwayat urungkan.
+    if (SHAPES.indexOf(done.tool) >= 0) {
+      if (done.points.length < 2) { redraw(); return; }
+      var dx = done.points[1].x - done.points[0].x, dy = done.points[1].y - done.points[0].y;
+      if (Math.sqrt(dx * dx + dy * dy) < 3) { redraw(); return; }
+    }
     if (done.points.length) commit(strokes().concat([done]), "Tersimpan otomatis di perangkat ini.");
   }
   canvas.addEventListener("pointerup", endStroke);
@@ -811,13 +868,18 @@
 
   function setTool(next) {
     tool = next;
-    ["pen", "highlighter", "eraser"].forEach(function (t) {
+    ["pen", "highlighter", "eraser"].concat(SHAPES).forEach(function (t) {
       document.getElementById("tool-" + t).setAttribute("aria-pressed", String(t === next));
     });
   }
   document.getElementById("tool-pen").addEventListener("click", function () { setTool("pen"); });
   document.getElementById("tool-highlighter").addEventListener("click", function () { setTool("highlighter"); });
   document.getElementById("tool-eraser").addEventListener("click", function () { setTool("eraser"); });
+  document.getElementById("tool-line").addEventListener("click", function () { setTool("line"); });
+  document.getElementById("tool-arrow").addEventListener("click", function () { setTool("arrow"); });
+  document.getElementById("tool-rect").addEventListener("click", function () { setTool("rect"); });
+  document.getElementById("tool-circle").addEventListener("click", function () { setTool("circle"); });
+  document.getElementById("tool-triangle").addEventListener("click", function () { setTool("triangle"); });
 
   document.querySelectorAll(".swatch").forEach(function (btn) {
     btn.addEventListener("click", function () {

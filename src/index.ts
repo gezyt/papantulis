@@ -152,10 +152,15 @@ function validPages(pages: any, current: any): boolean {
     if (!Array.isArray(page) || page.length > 5000) return false;
     for (const s of page) {
       if (!s || typeof s !== "object") return false;
-      if (!["pen", "highlighter", "eraser"].includes(s.tool)) return false;
+      if (!["pen", "highlighter", "eraser", "line", "arrow", "rect", "circle", "triangle"].includes(s.tool)) return false;
       if (typeof s.color !== "string" || s.color.length > 32) return false;
       if (typeof s.width !== "number" || !Number.isFinite(s.width) || s.width < 1 || s.width > 100) return false;
-      if (!Array.isArray(s.points) || s.points.length < 1 || s.points.length > 10000) return false;
+      // Bentuk selalu tepat 2 titik (awal dan akhir seretan); pena/stabilo/
+      // penghapus tetap bebas banyak titik.
+      if (!Array.isArray(s.points)) return false;
+      if (["line", "arrow", "rect", "circle", "triangle"].includes(s.tool)) {
+        if (s.points.length !== 2) return false;
+      } else if (s.points.length < 1 || s.points.length > 10000) return false;
       for (const p of s.points) {
         if (!p || typeof p.x !== "number" || typeof p.y !== "number" || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
         if (p.p !== undefined && (typeof p.p !== "number" || !Number.isFinite(p.p))) return false;
