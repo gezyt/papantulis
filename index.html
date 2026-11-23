@@ -469,6 +469,7 @@
   var selectedItem = null; // teks/gambar yang dipilih alat Pindah
   var panDrag = null;      // {startX, startY, scrollLeft, scrollTop, id}
   var moveDrag = null;     // {item, copy, offsetX, offsetY, moved}
+  var resizeDrag = null;   // {item, copy, corner, startX, startY, origX, origY, origW, origH, moved}
   var textTap = null;      // {x, y} ketukan alat Teks
   var imageCache = {};     // src dataURL -> HTMLImageElement
   var statusEl = document.getElementById("status");
@@ -832,7 +833,7 @@
   }
   function textSize(item) {
     var fs = item.fontSize || TEXT_FONT_SIZE;
-    var lines = wrapTextLines(item.text, TEXT_MAX_WIDTH, fs);
+    var lines = wrapTextLines(item.text, item.width || TEXT_MAX_WIDTH, fs);
     var w = 0;
     ctx.save();
     ctx.font = fs + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -841,7 +842,10 @@
     return { lines: lines, w: Math.max(40, Math.ceil(w)), h: Math.ceil(lines.length * fs * 1.35) };
   }
   function itemBounds(item) {
-    if (item.kind === "text") { var s = textSize(item); return { x: item.x, y: item.y, w: s.w, h: s.h }; }
+    // Kotak teks: lebarnya lebar kotak (yang bisa ditarik), bukan lebar
+    // baris terpanjang — supaya bingkai pilihan dan gagangnya mengikuti
+    // kotak, dan teks pendek tetap bisa dipilih di dalam kotaknya.
+    if (item.kind === "text") { var s = textSize(item); return { x: item.x, y: item.y, w: item.width || TEXT_MAX_WIDTH, h: s.h }; }
     if (item.kind === "image") return { x: item.x, y: item.y, w: item.w, h: item.h };
     return null;
   }
@@ -853,11 +857,39 @@
     }
     return null;
   }
+  // Gagang sudut gambar terpilih: empat titik sudut bingkai pilihan.
+  // Kotak teks punya dua gagang: tepi kanan (tengah) dan sudut kanan-bawah,
+  // keduanya melebarkan kotak; tinggi kotak mengikuti isi secara otomatis.
+  var HANDLE_TOLERANCE = 18;
+  function handlePoints(item) {
+    var b = itemBounds(item);
+    if (!b) return {};
+    return {
+      nw: { x: b.x, y: b.y }, ne: { x: b.x + b.w, y: b.y },
+      sw: { x: b.x, y: b.y + b.h }, se: { x: b.x + b.w, y: b.y + b.h },
+      e: { x: b.x + b.w, y: b.y + b.h / 2 },
+    };
+  }
+  function handleHitAt(p) {
+    if (!selectedItem || (selectedItem.kind !== "image" && selectedItem.kind !== "text")) return null;
+    var effective = selectedItem;
+    if (resizeDrag && selectedItem === resizeDrag.item) effective = resizeDrag.copy;
+    else if (moveDrag && selectedItem === moveDrag.item) effective = moveDrag.copy;
+    var pts = handlePoints(effective);
+    var corners = selectedItem.kind === "image" ? ["nw", "ne", "sw", "se"] : ["e", "se"];
+    for (var i = 0; i < corners.length; i++) {
+      var c = corners[i], pt = pts[c];
+      if (Math.abs(p.x - pt.x) <= HANDLE_TOLERANCE && Math.abs(p.y - pt.y) <= HANDLE_TOLERANCE) return c;
+    }
+    return null;
+  }
   function setSelected(item) {
     selectedItem = item || null;
     document.getElementById("delete-selected").disabled = !selectedItem;
     document.getElementById("edit-text").disabled = !(selectedItem && selectedItem.kind === "text");
     if (selectedItem && selectedItem.kind === "text") syncFontControl(selectedItem.fontSize || TEXT_FONT_SIZE);
+    if (selectedItem && selectedItem.kind === "text") setStatus("Teks dipilih — seret gagang kanan untuk melebarkan kotak, klik dua kali untuk mengedit.");
+    if (selectedItem && selectedItem.kind === "image") setStatus("Gambar dipilih — seret sudutnya untuk memperbesar/memperkecil, seret tengahnya untuk memindah.");
     redraw();
   }
   function replaceItem(oldItem, newItem) {
@@ -886,7 +918,7 @@
   function addTextAt(text, x, y) {
     text = String(text || "").replace(/\r\n/g, "\n").slice(0, 2000);
     if (!text.trim()) return false;
-    return addItem({ kind: "text", x: Math.max(8, Math.round(x)), y: Math.max(8, Math.round(y)), text: text, color: color, fontSize: defaultFontSize }, "Teks ditempel di papan — seret dengan ↖️ Pindah, klik dua kali untuk mengedit, A+/A− untuk ukuran huruf.");
+    return addItem({ kind: "text", x: Math.max(8, Math.round(x)), y: Math.max(8, Math.round(y)), text: text, color: color, fontSize: defaultFontSize, width: TEXT_MAX_WIDTH }, "Teks ditempel di papan — seret dengan ↖️ Pindah, klik dua kali untuk mengedit, A+/A− untuk ukuran huruf.");
   }
   function addImageAt(src, naturalW, naturalH) {
     var maxW = Math.min(600, stage.clientWidth - 32);
@@ -946,7 +978,7 @@
     textEditor.style.display = "block";
     textEditor.style.left = item.x + "px";
     textEditor.style.top = item.y + "px";
-    textEditor.style.width = TEXT_MAX_WIDTH + "px";
+    textEditor.style.width = (item.width || TEXT_MAX_WIDTH) + "px";
     textEditor.style.fontSize = editorFontSize + "px";
     textEditor.style.color = item.color || "#1f2937";
     textEditor.value = item.text;
@@ -1130,12 +1162,18 @@
     strokes().forEach(function (it) {
       // Selama teks/gambar diseret, gambar salinannya yang bergerak,
       // bukan aslinya — supaya Urungkan tetap bisa mengembalikan posisi lama.
-      drawItem(moveDrag && it === moveDrag.item ? moveDrag.copy : it);
+      var shown = it;
+      if (moveDrag && it === moveDrag.item) shown = moveDrag.copy;
+      if (resizeDrag && it === resizeDrag.item) shown = resizeDrag.copy;
+      drawItem(shown);
     });
     if (current) drawStroke(current);
     // Bingkai putus-putus di sekeliling teks/gambar yang dipilih alat Pindah.
     if (selectedItem) {
-      var b = itemBounds(moveDrag && selectedItem === moveDrag.item ? moveDrag.copy : selectedItem);
+      var shownSel = selectedItem;
+      if (moveDrag && selectedItem === moveDrag.item) shownSel = moveDrag.copy;
+      if (resizeDrag && selectedItem === resizeDrag.item) shownSel = resizeDrag.copy;
+      var b = itemBounds(shownSel);
       if (b) {
         ctx.save();
         ctx.strokeStyle = "#4f46e5";
@@ -1143,6 +1181,24 @@
         ctx.setLineDash([6, 4]);
         ctx.strokeRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12);
         ctx.restore();
+        // Gagang sudut untuk gambar: kotak putih kecil di tiap sudut,
+        // diseret untuk memperbesar/memperkecil dengan rasio tetap.
+        // Kotak teks: gagang di tepi kanan dan sudut kanan-bawah saja,
+        // diseret ke kanan untuk melebarkan kotak (tinggi ikut isi).
+        if (shownSel.kind === "image" || shownSel.kind === "text") {
+          var pts = handlePoints(shownSel);
+          var handles = shownSel.kind === "image" ? ["nw", "ne", "sw", "se"] : ["e", "se"];
+          handles.forEach(function (c) {
+            var pt = pts[c];
+            ctx.save();
+            ctx.fillStyle = "#ffffff";
+            ctx.strokeStyle = "#4f46e5";
+            ctx.lineWidth = 2;
+            ctx.fillRect(pt.x - 7, pt.y - 7, 14, 14);
+            ctx.strokeRect(pt.x - 7, pt.y - 7, 14, 14);
+            ctx.restore();
+          });
+        }
       }
     }
     var s = pageState();
@@ -1175,6 +1231,13 @@
       return;
     }
     if (tool === "select") {
+      var corner = handleHitAt(p);
+      if (corner && selectedItem) {
+        var rcopy = {};
+        for (var rk in selectedItem) rcopy[rk] = selectedItem[rk];
+        resizeDrag = { item: selectedItem, copy: rcopy, corner: corner, startX: p.x, startY: p.y, origX: selectedItem.x, origY: selectedItem.y, origW: selectedItem.w, origH: selectedItem.h, origWidth: selectedItem.width || TEXT_MAX_WIDTH, moved: false };
+        return;
+      }
       var hit = hitItemAt(p);
       if (hit) {
         var copy = {};
@@ -1199,6 +1262,45 @@
       stage.scrollTop = panDrag.scrollTop - (e.clientY - panDrag.startY);
       return;
     }
+    if (resizeDrag) {
+      e.preventDefault();
+      var rp = pos(e);
+      var dx = rp.x - resizeDrag.startX, dy = rp.y - resizeDrag.startY;
+      // Kotak teks: yang diubah hanya lebarnya — teks membungkus ulang
+      // mengikuti lebar baru, tinggi kotak mengikuti isi secara otomatis.
+      if (resizeDrag.copy.kind === "text") {
+        var newWidth = Math.max(120, Math.min(2000, Math.round(resizeDrag.origWidth + dx)));
+        resizeDrag.copy.width = newWidth;
+        if (Math.abs(newWidth - resizeDrag.origWidth) > 2) resizeDrag.moved = true;
+        ensureHeightFor(resizeDrag.copy.y + textSize(resizeDrag.copy).h);
+        redraw();
+        return;
+      }
+      var sx, sy;
+      if (resizeDrag.corner === "se") { sx = (resizeDrag.origW + dx) / resizeDrag.origW; sy = (resizeDrag.origH + dy) / resizeDrag.origH; }
+      else if (resizeDrag.corner === "ne") { sx = (resizeDrag.origW + dx) / resizeDrag.origW; sy = (resizeDrag.origH - dy) / resizeDrag.origH; }
+      else if (resizeDrag.corner === "sw") { sx = (resizeDrag.origW - dx) / resizeDrag.origW; sy = (resizeDrag.origH + dy) / resizeDrag.origH; }
+      else { sx = (resizeDrag.origW - dx) / resizeDrag.origW; sy = (resizeDrag.origH - dy) / resizeDrag.origH; }
+      // Rasio dijaga: pakai skala terbesar dari kedua sumbu, jadi gambar
+      // tidak gepeng; dibatasi 40 px sampai 2000 px per sisi.
+      var scale = Math.max(sx, sy);
+      scale = Math.max(Math.max(40 / resizeDrag.origW, 40 / resizeDrag.origH),
+        Math.min(scale, Math.min(2000 / resizeDrag.origW, 2000 / resizeDrag.origH)));
+      var newW = Math.round(resizeDrag.origW * scale);
+      var newH = Math.round(resizeDrag.origH * scale);
+      resizeDrag.copy.w = newW;
+      resizeDrag.copy.h = newH;
+      resizeDrag.copy.x = (resizeDrag.corner === "sw" || resizeDrag.corner === "nw")
+        ? resizeDrag.origX + resizeDrag.origW - newW : resizeDrag.origX;
+      resizeDrag.copy.y = (resizeDrag.corner === "nw" || resizeDrag.corner === "ne")
+        ? resizeDrag.origY + resizeDrag.origH - newH : resizeDrag.origY;
+      resizeDrag.copy.x = Math.max(0, resizeDrag.copy.x);
+      resizeDrag.copy.y = Math.max(0, resizeDrag.copy.y);
+      if (Math.abs(newW - resizeDrag.origW) > 2 || Math.abs(newH - resizeDrag.origH) > 2) resizeDrag.moved = true;
+      ensureHeightFor(resizeDrag.copy.y + newH);
+      redraw();
+      return;
+    }
     if (moveDrag) {
       e.preventDefault();
       var p = pos(e);
@@ -1210,9 +1312,13 @@
       return;
     }
     // Kursor edit: bila alat Pindah/Teks mengarah ke sebuah teks, kursor
-    // berubah jadi kursor teks (I) supaya ketahuan teks itu bisa diedit.
+    // berubah jadi kursor teks (I) supaya ketahuan teks itu bisa diedit;
+    // bila mengarah ke gagang sudut gambar, kursor jadi panah resize.
     if ((tool === "select" || tool === "text") && !current) {
-      canvas.style.cursor = hitItemAt(pos(e)) ? "text" : "";
+      var hp = pos(e);
+      var hc = tool === "select" ? handleHitAt(hp) : null;
+      if (hc) canvas.style.cursor = hc === "e" ? "ew-resize" : (hc === "nw" || hc === "se") ? "nwse-resize" : "nesw-resize";
+      else canvas.style.cursor = hitItemAt(hp) ? "text" : "";
       return;
     }
     if (!current) return;
@@ -1226,6 +1332,19 @@
   });
   function endStroke(e) {
     if (panDrag) { panDrag = null; canvas.classList.remove("panning"); return; }
+    if (resizeDrag) {
+      var rdrag = resizeDrag;
+      resizeDrag = null;
+      if (rdrag.moved) {
+        if (rdrag.copy.kind === "text") {
+          commit(replaceItem(rdrag.item, rdrag.copy), "Lebar kotak teks diubah menjadi " + rdrag.copy.width + " px.");
+        } else {
+          commit(replaceItem(rdrag.item, rdrag.copy), "Gambar diubah ukurannya menjadi " + rdrag.copy.w + " × " + rdrag.copy.h + " px.");
+        }
+        setSelected(rdrag.copy);
+      } else redraw();
+      return;
+    }
     if (moveDrag) {
       var drag = moveDrag;
       moveDrag = null;
@@ -1260,7 +1379,7 @@
     if (done.points.length) commit(strokes().concat([done]), "Tersimpan otomatis di perangkat ini.");
   }
   canvas.addEventListener("pointerup", endStroke);
-  canvas.addEventListener("pointercancel", function () { current = null; panDrag = null; moveDrag = null; textTap = null; canvas.classList.remove("panning"); redraw(); });
+  canvas.addEventListener("pointercancel", function () { current = null; panDrag = null; moveDrag = null; resizeDrag = null; textTap = null; canvas.classList.remove("panning"); redraw(); });
   // Klik dua kali teks (dengan alat apa pun kecuali Geser) langsung membuka
   // editor inline dengan kursor berkedip di dalam teksnya.
   canvas.addEventListener("dblclick", function (e) {
@@ -1301,7 +1420,7 @@
     if (next !== "select") setSelected(null);
     if (next === "pan") setStatus("Alat Geser: seret papan untuk menggeser ke atas/bawah. Roda mouse juga bisa.");
     if (next === "text") setStatus("Alat Teks: ketuk papan lalu tulis. Tempel teks dengan Ctrl+V.");
-    if (next === "select") setStatus("Alat Pindah: seret teks/gambar untuk memindahkannya, Delete untuk menghapus yang dipilih.");
+    if (next === "select") setStatus("Alat Pindah: seret teks/gambar untuk memindahkannya, seret sudut gambar untuk memperbesar/memperkecil, seret tepi kanan kotak teks untuk melebarkan, Delete untuk menghapus yang dipilih.");
   }
   document.getElementById("tool-pen").addEventListener("click", function () { setTool("pen"); });
   document.getElementById("tool-highlighter").addEventListener("click", function () { setTool("highlighter"); });

@@ -28,6 +28,16 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
   memilih (bingkai putus-putus), Delete/⌫ untuk menghapus. Teks dan
   gambar ikut tersimpan (lokal + server bila login), bisa diurungkan,
   dan ikut diekspor PNG.
+- **Gambar bisa diubah ukurannya:** gambar yang dipilih menampilkan
+  gagang putih di keempat sudutnya — seret sudut mana pun untuk
+  memperbesar/memperkecil dengan rasio tetap (tidak gepeng), 40 px
+  sampai 2000 px per sisi. Kursor berubah jadi panah resize saat
+  mengarah ke gagang. Ukuran baru ikut tersimpan dan bisa diurungkan.
+- **Kotak teks bisa dilebarkan:** teks yang dipilih menampilkan gagang
+  di tepi kanan dan sudut kanan-bawah — seret ke kanan untuk melebarkan
+  kotak (120–2000 px), teks membungkus ulang mengikuti lebar baru dan
+  tinggi kotak mengikuti isi secara otomatis. Editor inline ikut
+  selebar kotak. Teks lama tanpa lebar tetap terbaca (default 480 px).
 - **Edit teks langsung di papan:** klik dua kali teks (atau pilih teks
   lalu tekan ✏️, atau ketuk teks dengan alat 🔤 Teks) membuka editor
   inline tepat di atas teksnya — kursor berkedip di dalam teks, ketik

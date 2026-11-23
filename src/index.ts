@@ -152,13 +152,15 @@ function validPages(pages: any, current: any): boolean {
     if (!Array.isArray(page) || page.length > 5000) return false;
     for (const s of page) {
       if (!s || typeof s !== "object") return false;
-      // Teks tempelan: {kind:"text", x, y, text, color, fontSize}.
+      // Teks tempelan: {kind:"text", x, y, text, color, fontSize, width}.
       if (s.kind === "text") {
         if (typeof s.text !== "string" || s.text.length < 1 || s.text.length > 2000) return false;
         if (typeof s.x !== "number" || typeof s.y !== "number" || !Number.isFinite(s.x) || !Number.isFinite(s.y)) return false;
         if (s.x < 0 || s.y < 0 || s.x > 10000 || s.y > 10000) return false;
         if (typeof s.color !== "string" || s.color.length > 32) return false;
         if (typeof s.fontSize !== "number" || !Number.isFinite(s.fontSize) || s.fontSize < 12 || s.fontSize > 96) return false;
+        // Lebar kotak teks (boleh tidak ada pada teks lama = 480 px).
+        if (s.width !== undefined && (typeof s.width !== "number" || !Number.isFinite(s.width) || s.width < 120 || s.width > 2000)) return false;
         continue;
       }
       // Gambar tempelan: {kind:"image", x, y, w, h, src dataURL}.
