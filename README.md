@@ -28,6 +28,16 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
   memilih (bingkai putus-putus), Delete/⌫ untuk menghapus. Teks dan
   gambar ikut tersimpan (lokal + server bila login), bisa diurungkan,
   dan ikut diekspor PNG.
+- **Edit teks langsung di papan:** klik dua kali teks (atau pilih teks
+  lalu tekan ✏️, atau ketuk teks dengan alat 🔤 Teks) membuka editor
+  inline tepat di atas teksnya — kursor berkedip di dalam teks, ketik
+  langsung di sana; selesai dengan Ctrl+Enter atau klik di luar, Esc
+  untuk batal. Bila kursor diarahkan ke sebuah teks, kursor berubah
+  jadi kursor teks (I) supaya ketahuan teks itu bisa diedit.
+- **Ukuran huruf:** A− / pilihan angka / A+ di toolbar (18–72, default
+  28). Berlaku untuk teks yang sedang dipilih, dan menjadi ukuran
+  default untuk teks baru/tempelan berikutnya. Teks kosong yang
+  disimpan dari editor akan menghapus teks itu.
 - Simpan otomatis di perangkat ini (localStorage)
 - Ekspor PNG (latar putih)
 - **Mode halaman:** bar halaman di atas papan — tombol Halaman 1, 2, …,

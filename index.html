@@ -75,7 +75,12 @@
   canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; display:block; }
   canvas.tool-pan { cursor:grab; }
   canvas.tool-pan.panning { cursor:grabbing; }
-  canvas.tool-select, canvas.tool-text { cursor:default; }
+  canvas.tool-select { cursor:default; }
+  canvas.tool-text { cursor:text; }
+  /* Editor teks inline: kotak tulis yang muncul tepat di atas teks yang
+     diedit, lengkap dengan kursor berkedip — ketik langsung di papan,
+     bukan lewat kotak prompt. */
+  #text-editor { position:absolute; display:none; z-index:5; background:rgba(255,255,255,.94); border:2px dashed #4f46e5; border-radius:8px; padding:6px 8px; resize:none; overflow:hidden; line-height:1.35; outline:none; font-family:system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   footer { display:flex; flex-wrap:wrap; gap:.5rem; justify-content:space-between; align-items:center; padding:.45rem .75rem; background:var(--bar); border-top:1px solid #e2e8f0; font-size:.8rem; color:#64748b; }
   /* Bar atas gabungan (2 bar total): judul+akun, Sesi, dan Halaman dalam
      satu baris yang bisa digeser. Anak bar atas tidak lagi jadi bar sendiri:
@@ -138,6 +143,19 @@
     <button type="button" id="tool-circle" aria-pressed="false" aria-label="Lingkaran" title="Lingkaran">○</button>
     <button type="button" id="tool-triangle" aria-pressed="false" aria-label="Segitiga" title="Segitiga">△</button>
   </div>
+  <div class="group" role="group" aria-label="Ukuran huruf">
+    <button type="button" id="font-smaller" aria-label="Perkecil huruf" title="Perkecil huruf (teks yang dipilih, atau teks berikutnya)">A−</button>
+    <select id="font-size" aria-label="Ukuran huruf" title="Ukuran huruf (teks yang dipilih, atau teks berikutnya)">
+      <option value="18">18</option>
+      <option value="24">24</option>
+      <option value="28" selected>28</option>
+      <option value="36">36</option>
+      <option value="48">48</option>
+      <option value="64">64</option>
+      <option value="72">72</option>
+    </select>
+    <button type="button" id="font-larger" aria-label="Perbesar huruf" title="Perbesar huruf (teks yang dipilih, atau teks berikutnya)">A+</button>
+  </div>
   <div class="group" role="group" aria-label="Warna">
     <button type="button" class="swatch" data-color="#1f2937" style="background:#1f2937" aria-label="Hitam" aria-pressed="true"></button>
     <button type="button" class="swatch" data-color="#dc2626" style="background:#dc2626" aria-label="Merah" aria-pressed="false"></button>
@@ -164,6 +182,7 @@
     <button type="button" id="undo" disabled aria-label="Urungkan" title="Urungkan">↩️</button>
     <button type="button" id="redo" disabled aria-label="Ulangi" title="Ulangi">↪️</button>
     <button type="button" id="delete-selected" disabled aria-label="Hapus yang dipilih" title="Hapus teks/gambar yang dipilih">⌫</button>
+    <button type="button" id="edit-text" disabled aria-label="Ubah teks yang dipilih" title="Ubah teks yang dipilih (atau klik dua kali teksnya)">✏️</button>
     <button type="button" id="clear" aria-label="Hapus papan" title="Hapus papan">🗑️</button>
   </div>
   <div class="group">
@@ -224,7 +243,7 @@
 </div>
 </div>
 
-<div id="stage" class="bg-dots" title="Gulir dengan roda mouse, bilah gulir di kanan, atau alat ✋ Geser. Tempel teks/gambar dengan Ctrl+V."><div id="board-wrap" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas></div></div>
+<div id="stage" class="bg-dots" title="Gulir dengan roda mouse, bilah gulir di kanan, atau alat ✋ Geser. Tempel teks/gambar dengan Ctrl+V."><div id="board-wrap" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas><textarea id="text-editor" rows="1" aria-label="Ubah teks"></textarea></div></div>
 <input type="file" id="image-file" accept="image/*" hidden>
 
 <footer>
@@ -837,6 +856,8 @@
   function setSelected(item) {
     selectedItem = item || null;
     document.getElementById("delete-selected").disabled = !selectedItem;
+    document.getElementById("edit-text").disabled = !(selectedItem && selectedItem.kind === "text");
+    if (selectedItem && selectedItem.kind === "text") syncFontControl(selectedItem.fontSize || TEXT_FONT_SIZE);
     redraw();
   }
   function replaceItem(oldItem, newItem) {
@@ -865,7 +886,7 @@
   function addTextAt(text, x, y) {
     text = String(text || "").replace(/\r\n/g, "\n").slice(0, 2000);
     if (!text.trim()) return false;
-    return addItem({ kind: "text", x: Math.max(8, Math.round(x)), y: Math.max(8, Math.round(y)), text: text, color: color, fontSize: TEXT_FONT_SIZE }, "Teks ditempel di papan.");
+    return addItem({ kind: "text", x: Math.max(8, Math.round(x)), y: Math.max(8, Math.round(y)), text: text, color: color, fontSize: defaultFontSize }, "Teks ditempel di papan — seret dengan ↖️ Pindah, klik dua kali untuk mengedit, A+/A− untuk ukuran huruf.");
   }
   function addImageAt(src, naturalW, naturalH) {
     var maxW = Math.min(600, stage.clientWidth - 32);
@@ -875,6 +896,95 @@
     var c = viewCenter();
     return addItem({ kind: "image", x: Math.max(8, Math.round(c.x - w / 2)), y: Math.max(8, Math.round(c.y - h / 2)), w: w, h: h, src: src }, "Gambar ditempel di papan.");
   }
+  // ---------- editor teks inline + ukuran huruf ----------
+  var defaultFontSize = TEXT_FONT_SIZE; // ukuran untuk teks baru/tempel
+  var FONT_STEPS = [18, 24, 28, 36, 48, 64, 72];
+  var textEditor = document.getElementById("text-editor");
+  var editingItem = null;   // teks yang sedang dibuka editornya
+  var editorOpen = false;
+  var editorFontSize = TEXT_FONT_SIZE;
+
+  function syncFontControl(size) {
+    var sel = document.getElementById("font-size");
+    if (FONT_STEPS.indexOf(size) >= 0) sel.value = String(size);
+    else sel.value = String(defaultFontSize);
+  }
+  function applyFontSize(size) {
+    size = Math.max(12, Math.min(96, Math.round(size) || defaultFontSize));
+    defaultFontSize = size;
+    syncFontControl(size);
+    if (editorOpen && editingItem) {
+      editorFontSize = size;
+      textEditor.style.fontSize = size + "px";
+      fitTextEditor();
+      return;
+    }
+    if (selectedItem && selectedItem.kind === "text") {
+      var next = {};
+      for (var k in selectedItem) next[k] = selectedItem[k];
+      next.fontSize = size;
+      commit(replaceItem(selectedItem, next), "Ukuran huruf diubah menjadi " + size + ".");
+      setSelected(next);
+    } else {
+      setStatus("Ukuran huruf " + size + " — dipakai untuk teks berikutnya.");
+    }
+  }
+  function fitTextEditor() {
+    textEditor.style.height = "auto";
+    textEditor.style.height = Math.max(40, textEditor.scrollHeight + 4) + "px";
+  }
+  // Buka editor tepat di atas teks: kursor berkedip di dalam teksnya,
+  // ketik langsung di papan. Tutup: Ctrl+Enter, klik di luar, atau Esc
+  // (Esc membatalkan, yang lain menyimpan).
+  function showTextEditor(item) {
+    if (!item || item.kind !== "text") return;
+    hideTextEditor(true);
+    editingItem = item;
+    editorOpen = true;
+    editorFontSize = item.fontSize || TEXT_FONT_SIZE;
+    setSelected(item);
+    textEditor.style.display = "block";
+    textEditor.style.left = item.x + "px";
+    textEditor.style.top = item.y + "px";
+    textEditor.style.width = TEXT_MAX_WIDTH + "px";
+    textEditor.style.fontSize = editorFontSize + "px";
+    textEditor.style.color = item.color || "#1f2937";
+    textEditor.value = item.text;
+    syncFontControl(editorFontSize);
+    fitTextEditor();
+    textEditor.focus();
+    textEditor.setSelectionRange(textEditor.value.length, textEditor.value.length);
+    setStatus("Mengedit teks — Ctrl+Enter untuk selesai, Esc untuk batal.");
+  }
+  function hideTextEditor(commitChange) {
+    if (!editorOpen) return;
+    editorOpen = false;
+    var item = editingItem;
+    editingItem = null;
+    textEditor.style.display = "none";
+    if (!item || !commitChange) { redraw(); return; }
+    var newText = textEditor.value.replace(/\r\n/g, "\n").slice(0, 2000);
+    if (!newText.trim()) {
+      commit(strokes().filter(function (it) { return it !== item; }), "Teks kosong dihapus.");
+      setSelected(null);
+      return;
+    }
+    if (newText !== item.text || editorFontSize !== (item.fontSize || TEXT_FONT_SIZE)) {
+      var next = {};
+      for (var k in item) next[k] = item[k];
+      next.text = newText;
+      next.fontSize = editorFontSize;
+      commit(replaceItem(item, next), "Teks diubah.");
+      setSelected(next);
+    } else redraw();
+  }
+  textEditor.addEventListener("input", fitTextEditor);
+  textEditor.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { e.preventDefault(); hideTextEditor(false); }
+    else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); hideTextEditor(true); }
+    e.stopPropagation();
+  });
+  textEditor.addEventListener("blur", function () { hideTextEditor(true); });
   // Perkecil gambar tempelan ke sisi terpanjang 1000 px; bila PNG-nya masih
   // > 800 KB, simpan ulang sebagai JPEG 0.85 supaya tidak menghabiskan
   // batas simpan 5 MB untuk satu gambar.
@@ -1099,6 +1209,12 @@
       redraw();
       return;
     }
+    // Kursor edit: bila alat Pindah/Teks mengarah ke sebuah teks, kursor
+    // berubah jadi kursor teks (I) supaya ketahuan teks itu bisa diedit.
+    if ((tool === "select" || tool === "text") && !current) {
+      canvas.style.cursor = hitItemAt(pos(e)) ? "text" : "";
+      return;
+    }
     if (!current) return;
     e.preventDefault();
     // Bentuk: pratinjau langsung, titik akhirnya diganti terus selama
@@ -1123,16 +1239,8 @@
       var tap = textTap;
       textTap = null;
       var hit = hitItemAt(tap);
-      if (hit && hit.kind === "text") {
-        var edited = window.prompt("Ubah teks:", hit.text);
-        if (edited !== null && edited.trim() && edited !== hit.text) {
-          var next = {};
-          for (var k in hit) next[k] = hit[k];
-          next.text = edited.slice(0, 2000);
-          commit(replaceItem(hit, next), "Teks diubah.");
-          setSelected(next);
-        }
-      } else if (!hit) {
+      if (hit && hit.kind === "text") showTextEditor(hit);
+      else if (!hit) {
         var text = window.prompt("Tulis teks untuk papan:", "");
         if (text !== null && text.trim()) addTextAt(text, tap.x, tap.y);
       }
@@ -1153,9 +1261,37 @@
   }
   canvas.addEventListener("pointerup", endStroke);
   canvas.addEventListener("pointercancel", function () { current = null; panDrag = null; moveDrag = null; textTap = null; canvas.classList.remove("panning"); redraw(); });
+  // Klik dua kali teks (dengan alat apa pun kecuali Geser) langsung membuka
+  // editor inline dengan kursor berkedip di dalam teksnya.
+  canvas.addEventListener("dblclick", function (e) {
+    if (tool === "pan") return;
+    var hit = hitItemAt(pos(e));
+    if (hit && hit.kind === "text") showTextEditor(hit);
+  });
+  document.getElementById("edit-text").addEventListener("click", function () {
+    if (selectedItem && selectedItem.kind === "text") showTextEditor(selectedItem);
+  });
+  document.getElementById("font-size").addEventListener("change", function (e) {
+    applyFontSize(parseInt(e.target.value, 10));
+  });
+  document.getElementById("font-smaller").addEventListener("click", function () {
+    var cur = (selectedItem && selectedItem.kind === "text") ? (selectedItem.fontSize || TEXT_FONT_SIZE) : defaultFontSize;
+    var smaller = FONT_STEPS[0];
+    FONT_STEPS.forEach(function (s) { if (s < cur) smaller = s; });
+    if (editorOpen) smaller = Math.max(12, editorFontSize - 4);
+    applyFontSize(smaller);
+  });
+  document.getElementById("font-larger").addEventListener("click", function () {
+    var cur = (selectedItem && selectedItem.kind === "text") ? (selectedItem.fontSize || TEXT_FONT_SIZE) : defaultFontSize;
+    var larger = FONT_STEPS[FONT_STEPS.length - 1];
+    for (var i = FONT_STEPS.length - 1; i >= 0; i--) { if (FONT_STEPS[i] > cur) larger = FONT_STEPS[i]; }
+    if (editorOpen) larger = Math.min(96, editorFontSize + 4);
+    applyFontSize(larger);
+  });
 
   function setTool(next) {
     tool = next;
+    canvas.style.cursor = "";
     ["pen", "highlighter", "eraser", "pan", "text", "select"].concat(SHAPES).forEach(function (t) {
       document.getElementById("tool-" + t).setAttribute("aria-pressed", String(t === next));
     });
@@ -1321,7 +1457,10 @@
   document.addEventListener("keydown", function (e) {
     var target = e.target;
     var typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT");
-    if (!typing && (e.key === "Delete" || e.key === "Backspace") && selectedItem) {
+    // Saat mengetik (termasuk di editor teks inline), semua pintasan papan
+    // nonaktif — supaya Ctrl+Z di editor mengurungkan ketikan, bukan goresan.
+    if (typing) return;
+    if ((e.key === "Delete" || e.key === "Backspace") && selectedItem) {
       e.preventDefault();
       document.getElementById("delete-selected").click();
       return;
