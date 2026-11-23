@@ -152,6 +152,26 @@ function validPages(pages: any, current: any): boolean {
     if (!Array.isArray(page) || page.length > 5000) return false;
     for (const s of page) {
       if (!s || typeof s !== "object") return false;
+      // Teks tempelan: {kind:"text", x, y, text, color, fontSize}.
+      if (s.kind === "text") {
+        if (typeof s.text !== "string" || s.text.length < 1 || s.text.length > 2000) return false;
+        if (typeof s.x !== "number" || typeof s.y !== "number" || !Number.isFinite(s.x) || !Number.isFinite(s.y)) return false;
+        if (s.x < 0 || s.y < 0 || s.x > 10000 || s.y > 10000) return false;
+        if (typeof s.color !== "string" || s.color.length > 32) return false;
+        if (typeof s.fontSize !== "number" || !Number.isFinite(s.fontSize) || s.fontSize < 12 || s.fontSize > 96) return false;
+        continue;
+      }
+      // Gambar tempelan: {kind:"image", x, y, w, h, src dataURL}.
+      // Satu gambar maks. 2 MB string (klien sudah memperkecil ke < ~800 KB);
+      // total semua sesi tetap dibatasi 5 MB di PUT /api/sessions.
+      if (s.kind === "image") {
+        if (typeof s.src !== "string" || !s.src.startsWith("data:image/") || s.src.length > 2000000) return false;
+        if (typeof s.x !== "number" || typeof s.y !== "number" || typeof s.w !== "number" || typeof s.h !== "number") return false;
+        if (!Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.w) || !Number.isFinite(s.h)) return false;
+        if (s.x < 0 || s.y < 0 || s.x > 10000 || s.y > 10000 || s.w < 10 || s.h < 10 || s.w > 2000 || s.h > 2000) return false;
+        continue;
+      }
+      if (s.kind !== undefined && s.kind !== "stroke") return false;
       if (!["pen", "highlighter", "eraser", "line", "arrow", "rect", "circle", "triangle"].includes(s.tool)) return false;
       if (typeof s.color !== "string" || s.color.length > 32) return false;
       if (typeof s.width !== "number" || !Number.isFinite(s.width) || s.width < 1 || s.width > 100) return false;

@@ -60,13 +60,22 @@
   .page-bar { display:flex; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; gap:.4rem; align-items:center; padding:.45rem .75rem; background:#fff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
   .page-bar > * { flex-shrink:0; }
   .page-bar .page-label { color:#475569; }
-  #stage { position:relative; flex:1; min-height:0; overflow:hidden; background:#fff; }
-  #stage.bg-grid { background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size:28px 28px; }
-  #stage.bg-lines { background-image: repeating-linear-gradient(transparent, transparent 31px, #dbeafe 32px); }
+  #stage { position:relative; flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; background:#fff; scrollbar-width:thin; }
+  /* Papan yang bisa digeser ke atas/bawah: stage adalah wadah gulir,
+     isinya #board-wrap setinggi papan (lebih tinggi dari layar), jadi
+     bilah gulir kanan, roda mouse, dan alat ✋ Geser semuanya menggeser
+     papan yang sama. Latar digambar di wrap supaya polanya ikut
+     memanjang ke bawah, bukan hanya setinggi layar. */
+  #board-wrap { position:relative; width:100%; }
+  #stage.bg-grid, #board-wrap.bg-grid { background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size:28px 28px; }
+  #stage.bg-lines, #board-wrap.bg-lines { background-image: repeating-linear-gradient(transparent, transparent 31px, #dbeafe 32px); }
   /* Titik-titik: persegi tanpa garis, titik hanya di sudut/perpotongan grid 28px yang
      sama dengan latar kotak, supaya titik tidak loncat saat berganti latar. */
-  #stage.bg-dots { background-image: radial-gradient(circle, #94a3b8 1.5px, transparent 1.6px); background-size:28px 28px; background-position:-14px -14px; }
+  #stage.bg-dots, #board-wrap.bg-dots { background-image: radial-gradient(circle, #94a3b8 1.5px, transparent 1.6px); background-size:28px 28px; background-position:-14px -14px; }
   canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; display:block; }
+  canvas.tool-pan { cursor:grab; }
+  canvas.tool-pan.panning { cursor:grabbing; }
+  canvas.tool-select, canvas.tool-text { cursor:default; }
   footer { display:flex; flex-wrap:wrap; gap:.5rem; justify-content:space-between; align-items:center; padding:.45rem .75rem; background:var(--bar); border-top:1px solid #e2e8f0; font-size:.8rem; color:#64748b; }
   /* Bar atas gabungan (2 bar total): judul+akun, Sesi, dan Halaman dalam
      satu baris yang bisa digeser. Anak bar atas tidak lagi jadi bar sendiri:
@@ -120,6 +129,9 @@
     <button type="button" id="tool-pen" aria-pressed="true" aria-label="Pena" title="Pena">🖊️</button>
     <button type="button" id="tool-highlighter" aria-pressed="false" aria-label="Stabilo" title="Stabilo">🖍️</button>
     <button type="button" id="tool-eraser" aria-pressed="false" aria-label="Penghapus" title="Penghapus">🧽</button>
+    <button type="button" id="tool-pan" aria-pressed="false" aria-label="Geser papan" title="Geser papan: seret untuk menggeser papan ke atas/bawah">✋</button>
+    <button type="button" id="tool-text" aria-pressed="false" aria-label="Teks" title="Teks: ketuk papan lalu tulis, atau tempel teks (Ctrl+V)">🔤</button>
+    <button type="button" id="tool-select" aria-pressed="false" aria-label="Pindah" title="Pindah: seret teks/gambar untuk memindahkannya, ketuk untuk memilih, Delete untuk menghapus">↖️</button>
     <button type="button" id="tool-line" aria-pressed="false" aria-label="Garis lurus" title="Garis lurus">╱</button>
     <button type="button" id="tool-arrow" aria-pressed="false" aria-label="Garis panah" title="Garis panah">↗</button>
     <button type="button" id="tool-rect" aria-pressed="false" aria-label="Persegi panjang" title="Persegi panjang">▭</button>
@@ -151,9 +163,12 @@
   <div class="group" role="group" aria-label="Riwayat">
     <button type="button" id="undo" disabled aria-label="Urungkan" title="Urungkan">↩️</button>
     <button type="button" id="redo" disabled aria-label="Ulangi" title="Ulangi">↪️</button>
+    <button type="button" id="delete-selected" disabled aria-label="Hapus yang dipilih" title="Hapus teks/gambar yang dipilih">⌫</button>
     <button type="button" id="clear" aria-label="Hapus papan" title="Hapus papan">🗑️</button>
   </div>
   <div class="group">
+    <button type="button" id="insert-image" aria-label="Sisipkan gambar" title="Sisipkan gambar dari perangkat (atau tempel gambar dengan Ctrl+V, atau seret berkas gambar ke papan)">🖼️</button>
+    <button type="button" id="grow-board" aria-label="Tambah panjang papan" title="Tambah panjang papan ke bawah">⇕</button>
     <button type="button" id="export" aria-label="Simpan PNG" title="Simpan PNG">⬇️</button>
     <button type="button" id="fullscreen" aria-pressed="false" aria-label="Layar penuh" title="Layar penuh">⛶</button>
   </div>
@@ -209,10 +224,11 @@
 </div>
 </div>
 
-<div id="stage" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas></div>
+<div id="stage" class="bg-dots" title="Gulir dengan roda mouse, bilah gulir di kanan, atau alat ✋ Geser. Tempel teks/gambar dengan Ctrl+V."><div id="board-wrap" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas></div></div>
+<input type="file" id="image-file" accept="image/*" hidden>
 
 <footer>
-  <span id="status">Siap menggambar.</span>
+  <span id="status">Siap menggambar — gulir papan ke bawah dengan roda mouse atau ✋ Geser; tempel teks/gambar dengan Ctrl+V.</span>
   <span id="server-status"></span>
   <span>© 2026 GezyTech App · Dikembangkan oleh PakGun · Dilarang menyalin/menduplikat kode tanpa izin tertulis.</span>
 </footer>
@@ -419,7 +435,23 @@
   "use strict";
   var canvas = document.getElementById("board");
   var stage = document.getElementById("stage");
+  var boardWrap = document.getElementById("board-wrap");
   var ctx = canvas.getContext("2d");
+  // Papan panjang yang bisa digeser: tinggi awal 2400 px (sekitar 2-3 layar),
+  // memanjang otomatis bila coretan/tempelan mendekati bawah, maks. 9600 px.
+  var BOARD_BASE_HEIGHT = 2400;
+  var BOARD_GROW_STEP = 1200;
+  var BOARD_MAX_HEIGHT = 9600;
+  var boardHeight = BOARD_BASE_HEIGHT;
+  // Isi halaman kini tiga macam: goresan (tool + points, tanpa kind),
+  // teks {kind:"text"} dan gambar {kind:"image"}. Goresan lama tetap
+  // terbaca karena tidak punya kind. Teks/gambar ikut tersimpan,
+  // diurungkan, dan diekspor PNG bersama goresan.
+  var selectedItem = null; // teks/gambar yang dipilih alat Pindah
+  var panDrag = null;      // {startX, startY, scrollLeft, scrollTop, id}
+  var moveDrag = null;     // {item, copy, offsetX, offsetY, moved}
+  var textTap = null;      // {x, y} ketukan alat Teks
+  var imageCache = {};     // src dataURL -> HTMLImageElement
   var statusEl = document.getElementById("status");
   var STORAGE_KEY = "papantulis-sessions-v3";
   var OLD_BOARD_KEY = "papantulis-pages-v2";
@@ -594,6 +626,7 @@
     sessions.forEach(function (s) { if (s.id === id) target = s; });
     if (!target) return;
     current = null;
+    setSelected(null);
     saveActiveSession();
     currentSessionId = id;
     loadActiveSession();
@@ -719,6 +752,7 @@
   function switchPage(i) {
     if (i < 0 || i >= pageHistories.length || i === currentPage) return;
     current = null;
+    setSelected(null);
     currentPage = i;
     saveLocal();
     renderPageBar();
@@ -728,11 +762,144 @@
 
   function resize() {
     var dpr = window.devicePixelRatio || 1;
-    var w = stage.clientWidth, h = stage.clientHeight;
+    var w = stage.clientWidth;
+    // Lebar mengikuti layar, tinggi mengikuti papan panjang (bukan layar),
+    // supaya coretan di bawah tetap ada saat digeser ke atas.
+    boardWrap.style.height = boardHeight + "px";
     canvas.width = Math.max(1, Math.round(w * dpr));
-    canvas.height = Math.max(1, Math.round(h * dpr));
+    canvas.height = Math.max(1, Math.round(boardHeight * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     redraw();
+  }
+  function growBoard(step) {
+    if (boardHeight >= BOARD_MAX_HEIGHT) { setStatus("Papan sudah sepanjang maksimal."); return false; }
+    boardHeight = Math.min(BOARD_MAX_HEIGHT, boardHeight + (step || BOARD_GROW_STEP));
+    resize();
+    return true;
+  }
+  // Bila sesuatu diletakkan/digambar dekat bawah, panjangkan papan dulu
+  // supaya tidak terpotong; mengembalikan tinggi yang dipakai.
+  function ensureHeightFor(y) {
+    var guard = 0;
+    while (y > boardHeight - 300 && guard < 8) { if (!growBoard()) break; guard++; }
+  }
+  function viewCenter() {
+    return {
+      x: stage.scrollLeft + stage.clientWidth / 2,
+      y: stage.scrollTop + stage.clientHeight / 2,
+    };
+  }
+
+  // ---------- teks & gambar ----------
+  var TEXT_MAX_WIDTH = 480;
+  var TEXT_FONT_SIZE = 28;
+  function wrapTextLines(text, maxWidth, fontSize) {
+    ctx.save();
+    ctx.font = (fontSize || TEXT_FONT_SIZE) + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+    var lines = [];
+    text.split("\n").forEach(function (para) {
+      var words = para.split(/\s+/).filter(function (w) { return w.length; });
+      if (!words.length) { lines.push(""); return; }
+      var line = words[0];
+      for (var i = 1; i < words.length; i++) {
+        var test = line + " " + words[i];
+        if (ctx.measureText(test).width > maxWidth && line.length) { lines.push(line); line = words[i]; }
+        else line = test;
+      }
+      lines.push(line);
+    });
+    ctx.restore();
+    return lines;
+  }
+  function textSize(item) {
+    var fs = item.fontSize || TEXT_FONT_SIZE;
+    var lines = wrapTextLines(item.text, TEXT_MAX_WIDTH, fs);
+    var w = 0;
+    ctx.save();
+    ctx.font = fs + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+    lines.forEach(function (l) { w = Math.max(w, ctx.measureText(l).width); });
+    ctx.restore();
+    return { lines: lines, w: Math.max(40, Math.ceil(w)), h: Math.ceil(lines.length * fs * 1.35) };
+  }
+  function itemBounds(item) {
+    if (item.kind === "text") { var s = textSize(item); return { x: item.x, y: item.y, w: s.w, h: s.h }; }
+    if (item.kind === "image") return { x: item.x, y: item.y, w: item.w, h: item.h };
+    return null;
+  }
+  function hitItemAt(p) {
+    var list = strokes();
+    for (var i = list.length - 1; i >= 0; i--) {
+      var b = itemBounds(list[i]);
+      if (b && p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6) return list[i];
+    }
+    return null;
+  }
+  function setSelected(item) {
+    selectedItem = item || null;
+    document.getElementById("delete-selected").disabled = !selectedItem;
+    redraw();
+  }
+  function replaceItem(oldItem, newItem) {
+    var list = strokes().slice();
+    var idx = list.indexOf(oldItem);
+    if (idx < 0) return list;
+    list[idx] = newItem;
+    return list;
+  }
+  function addItem(item, note) {
+    // Penjaga ukuran: satu gambar yang sudah diperkecil umumnya < 800 KB;
+    // bila total sesi melewati 4,5 MB, server (batas 5 MB) akan menolaknya,
+    // jadi tolak di sini dengan pesan yang jelas, bukan gagal diam-diam.
+    var next = strokes().concat([item]);
+    var probe = sessionsFromLocal();
+    if (JSON.stringify(probe).length + JSON.stringify(item).length > 4500000) {
+      setStatus("Papan hampir penuh (mendekati batas simpan 5 MB). Hapus sebagian isi dulu sebelum menambah gambar.");
+      window.alert("Papan hampir penuh (mendekati batas simpan 5 MB). Hapus sebagian isi dulu sebelum menambah gambar.");
+      return false;
+    }
+    ensureHeightFor(item.y + (item.h || 100));
+    commit(next, note || "Ditambahkan ke papan.");
+    if (item.kind === "image" || item.kind === "text") setSelected(item);
+    return true;
+  }
+  function addTextAt(text, x, y) {
+    text = String(text || "").replace(/\r\n/g, "\n").slice(0, 2000);
+    if (!text.trim()) return false;
+    return addItem({ kind: "text", x: Math.max(8, Math.round(x)), y: Math.max(8, Math.round(y)), text: text, color: color, fontSize: TEXT_FONT_SIZE }, "Teks ditempel di papan.");
+  }
+  function addImageAt(src, naturalW, naturalH) {
+    var maxW = Math.min(600, stage.clientWidth - 32);
+    var scale = Math.min(1, maxW / naturalW);
+    var w = Math.max(40, Math.round(naturalW * scale));
+    var h = Math.max(40, Math.round(naturalH * scale));
+    var c = viewCenter();
+    return addItem({ kind: "image", x: Math.max(8, Math.round(c.x - w / 2)), y: Math.max(8, Math.round(c.y - h / 2)), w: w, h: h, src: src }, "Gambar ditempel di papan.");
+  }
+  // Perkecil gambar tempelan ke sisi terpanjang 1000 px; bila PNG-nya masih
+  // > 800 KB, simpan ulang sebagai JPEG 0.85 supaya tidak menghabiskan
+  // batas simpan 5 MB untuk satu gambar.
+  function processImageFile(file, done) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      URL.revokeObjectURL(url);
+      var scale = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
+      var w = Math.max(1, Math.round(img.naturalWidth * scale));
+      var h = Math.max(1, Math.round(img.naturalHeight * scale));
+      var off = document.createElement("canvas");
+      off.width = w; off.height = h;
+      var octx = off.getContext("2d");
+      octx.drawImage(img, 0, 0, w, h);
+      var dataUrl = off.toDataURL("image/png");
+      if (dataUrl.length > 800000) {
+        octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, w, h);
+        octx.drawImage(img, 0, 0, w, h);
+        dataUrl = off.toDataURL("image/jpeg", 0.85);
+      }
+      done(dataUrl, w, h);
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); setStatus("Gambar itu tidak bisa dibaca."); };
+    img.src = url;
   }
 
   function drawStroke(s) {
@@ -809,10 +976,65 @@
     ctx.restore();
   }
 
+  function drawItem(item) {
+    if (!item.kind) { drawStroke(item); return; }
+    if (item.kind === "text") {
+      var fs = item.fontSize || TEXT_FONT_SIZE;
+      var s = textSize(item);
+      ctx.save();
+      ctx.font = fs + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillStyle = item.color || "#1f2937";
+      ctx.textBaseline = "top";
+      s.lines.forEach(function (line, i) { ctx.fillText(line, item.x, item.y + i * fs * 1.35); });
+      ctx.restore();
+      return;
+    }
+    if (item.kind === "image") {
+      var cached = imageCache[item.src];
+      if (cached && cached.complete && cached.naturalWidth) {
+        ctx.drawImage(cached, item.x, item.y, item.w, item.h);
+      } else {
+        if (!cached) {
+          var img = new Image();
+          imageCache[item.src] = img;
+          img.onload = function () { redraw(); };
+          img.src = item.src;
+        }
+        ctx.save();
+        ctx.strokeStyle = "#94a3b8";
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(item.x, item.y, item.w, item.h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#64748b";
+        ctx.font = "14px system-ui, sans-serif";
+        ctx.fillText("Memuat gambar…", item.x + 8, item.y + 8);
+        ctx.restore();
+      }
+      return;
+    }
+    drawStroke(item);
+  }
+
   function redraw() {
-    ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
-    strokes().forEach(drawStroke);
+    ctx.clearRect(0, 0, stage.clientWidth, boardHeight);
+    strokes().forEach(function (it) {
+      // Selama teks/gambar diseret, gambar salinannya yang bergerak,
+      // bukan aslinya — supaya Urungkan tetap bisa mengembalikan posisi lama.
+      drawItem(moveDrag && it === moveDrag.item ? moveDrag.copy : it);
+    });
     if (current) drawStroke(current);
+    // Bingkai putus-putus di sekeliling teks/gambar yang dipilih alat Pindah.
+    if (selectedItem) {
+      var b = itemBounds(moveDrag && selectedItem === moveDrag.item ? moveDrag.copy : selectedItem);
+      if (b) {
+        ctx.save();
+        ctx.strokeStyle = "#4f46e5";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12);
+        ctx.restore();
+      }
+    }
     var s = pageState();
     document.getElementById("undo").disabled = s.index === 0;
     document.getElementById("redo").disabled = s.index === s.history.length - 1;
@@ -836,20 +1058,86 @@
   canvas.addEventListener("pointerdown", function (e) {
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
-    current = { tool: tool, color: color, width: tool === "highlighter" ? Math.max(width, 10) : width, points: [pos(e)] };
+    var p = pos(e);
+    if (tool === "pan") {
+      panDrag = { id: e.pointerId, startX: e.clientX, startY: e.clientY, scrollLeft: stage.scrollLeft, scrollTop: stage.scrollTop };
+      canvas.classList.add("panning");
+      return;
+    }
+    if (tool === "select") {
+      var hit = hitItemAt(p);
+      if (hit) {
+        var copy = {};
+        for (var k in hit) copy[k] = hit[k];
+        moveDrag = { item: hit, copy: copy, offsetX: p.x - hit.x, offsetY: p.y - hit.y, moved: false };
+        setSelected(hit);
+      } else setSelected(null);
+      return;
+    }
+    if (tool === "text") {
+      textTap = { x: p.x, y: p.y };
+      return;
+    }
+    ensureHeightFor(p.y);
+    current = { tool: tool, color: color, width: tool === "highlighter" ? Math.max(width, 10) : width, points: [p] };
     redraw();
   });
   canvas.addEventListener("pointermove", function (e) {
+    if (panDrag && e.pointerId === panDrag.id) {
+      e.preventDefault();
+      stage.scrollLeft = panDrag.scrollLeft - (e.clientX - panDrag.startX);
+      stage.scrollTop = panDrag.scrollTop - (e.clientY - panDrag.startY);
+      return;
+    }
+    if (moveDrag) {
+      e.preventDefault();
+      var p = pos(e);
+      moveDrag.copy.x = Math.max(0, Math.round(p.x - moveDrag.offsetX));
+      moveDrag.copy.y = Math.max(0, Math.round(p.y - moveDrag.offsetY));
+      if (Math.abs(moveDrag.copy.x - moveDrag.item.x) > 2 || Math.abs(moveDrag.copy.y - moveDrag.item.y) > 2) moveDrag.moved = true;
+      ensureHeightFor(moveDrag.copy.y + (moveDrag.copy.h || 100));
+      redraw();
+      return;
+    }
     if (!current) return;
     e.preventDefault();
     // Bentuk: pratinjau langsung, titik akhirnya diganti terus selama
     // diseret (bukan ditambah), supaya bentuknya membesar/mengecil
     // mengikuti seretan dan hasil akhirnya tetap 2 titik.
     if (SHAPES.indexOf(current.tool) >= 0) current.points = [current.points[0], pos(e)];
-    else current.points.push(pos(e));
+    else { current.points.push(pos(e)); ensureHeightFor(pos(e).y); }
     redraw();
   });
   function endStroke(e) {
+    if (panDrag) { panDrag = null; canvas.classList.remove("panning"); return; }
+    if (moveDrag) {
+      var drag = moveDrag;
+      moveDrag = null;
+      if (drag.moved) {
+        commit(replaceItem(drag.item, drag.copy), "Teks/gambar dipindah.");
+        setSelected(drag.copy);
+      } else redraw();
+      return;
+    }
+    if (textTap) {
+      var tap = textTap;
+      textTap = null;
+      var hit = hitItemAt(tap);
+      if (hit && hit.kind === "text") {
+        var edited = window.prompt("Ubah teks:", hit.text);
+        if (edited !== null && edited.trim() && edited !== hit.text) {
+          var next = {};
+          for (var k in hit) next[k] = hit[k];
+          next.text = edited.slice(0, 2000);
+          commit(replaceItem(hit, next), "Teks diubah.");
+          setSelected(next);
+        }
+      } else if (!hit) {
+        var text = window.prompt("Tulis teks untuk papan:", "");
+        if (text !== null && text.trim()) addTextAt(text, tap.x, tap.y);
+      }
+      return;
+    }
     if (!current) return;
     if (e && e.type === "pointermove") return;
     var done = current;
@@ -864,17 +1152,27 @@
     if (done.points.length) commit(strokes().concat([done]), "Tersimpan otomatis di perangkat ini.");
   }
   canvas.addEventListener("pointerup", endStroke);
-  canvas.addEventListener("pointercancel", function () { current = null; redraw(); });
+  canvas.addEventListener("pointercancel", function () { current = null; panDrag = null; moveDrag = null; textTap = null; canvas.classList.remove("panning"); redraw(); });
 
   function setTool(next) {
     tool = next;
-    ["pen", "highlighter", "eraser"].concat(SHAPES).forEach(function (t) {
+    ["pen", "highlighter", "eraser", "pan", "text", "select"].concat(SHAPES).forEach(function (t) {
       document.getElementById("tool-" + t).setAttribute("aria-pressed", String(t === next));
     });
+    canvas.classList.toggle("tool-pan", next === "pan");
+    canvas.classList.toggle("tool-select", next === "select");
+    canvas.classList.toggle("tool-text", next === "text");
+    if (next !== "select") setSelected(null);
+    if (next === "pan") setStatus("Alat Geser: seret papan untuk menggeser ke atas/bawah. Roda mouse juga bisa.");
+    if (next === "text") setStatus("Alat Teks: ketuk papan lalu tulis. Tempel teks dengan Ctrl+V.");
+    if (next === "select") setStatus("Alat Pindah: seret teks/gambar untuk memindahkannya, Delete untuk menghapus yang dipilih.");
   }
   document.getElementById("tool-pen").addEventListener("click", function () { setTool("pen"); });
   document.getElementById("tool-highlighter").addEventListener("click", function () { setTool("highlighter"); });
   document.getElementById("tool-eraser").addEventListener("click", function () { setTool("eraser"); });
+  document.getElementById("tool-pan").addEventListener("click", function () { setTool("pan"); });
+  document.getElementById("tool-text").addEventListener("click", function () { setTool("text"); });
+  document.getElementById("tool-select").addEventListener("click", function () { setTool("select"); });
   document.getElementById("tool-line").addEventListener("click", function () { setTool("line"); });
   document.getElementById("tool-arrow").addEventListener("click", function () { setTool("arrow"); });
   document.getElementById("tool-rect").addEventListener("click", function () { setTool("rect"); });
@@ -901,10 +1199,12 @@
     document.getElementById("width-label").textContent = String(width);
   });
   document.getElementById("background").addEventListener("change", function (e) {
+    // Latar hidup di #board-wrap (yang memanjang ke bawah), bukan di stage.
+    boardWrap.classList.remove("bg-grid", "bg-lines", "bg-dots");
     stage.classList.remove("bg-grid", "bg-lines", "bg-dots");
-    if (e.target.value === "grid") stage.classList.add("bg-grid");
-    if (e.target.value === "lines") stage.classList.add("bg-lines");
-    if (e.target.value === "dots") stage.classList.add("bg-dots");
+    if (e.target.value === "grid") boardWrap.classList.add("bg-grid");
+    if (e.target.value === "lines") boardWrap.classList.add("bg-lines");
+    if (e.target.value === "dots") boardWrap.classList.add("bg-dots");
   });
 
   document.getElementById("undo").addEventListener("click", function () {
@@ -915,10 +1215,72 @@
     var s = pageState();
     if (s.index < s.history.length - 1) { s.index++; saveLocal(); setStatus("Satu goresan diulangi."); redraw(); }
   });
+  document.getElementById("delete-selected").addEventListener("click", function () {
+    if (!selectedItem) return;
+    var label = selectedItem.kind === "text" ? "teks ini" : "gambar ini";
+    commit(strokes().filter(function (it) { return it !== selectedItem; }), label + " dihapus. Tekan Urungkan untuk mengembalikan.");
+    setSelected(null);
+  });
+  document.getElementById("grow-board").addEventListener("click", function () {
+    if (growBoard()) {
+      stage.scrollTop = stage.scrollHeight;
+      setStatus("Papan diperpanjang ke bawah. Total tinggi " + boardHeight + " px.");
+    }
+  });
+  document.getElementById("insert-image").addEventListener("click", function () {
+    document.getElementById("image-file").click();
+  });
+  document.getElementById("image-file").addEventListener("change", function (e) {
+    var file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.type.indexOf("image/") !== 0) { setStatus("Berkas itu bukan gambar."); return; }
+    processImageFile(file, function (src, w, h) { addImageAt(src, w, h); });
+  });
+  // Tempel (Ctrl+V / tempel di HP): gambar dari clipboard jadi gambar di
+  // papan, teks jadi teks di papan — keduanya di tengah area yang sedang
+  // terlihat. Diabaikan bila fokus sedang di kolom isian (login, nama sesi).
+  document.addEventListener("paste", function (e) {
+    var target = e.target;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+    var clipboard = e.clipboardData || window.clipboardData;
+    if (!clipboard) return;
+    var items = clipboard.items || [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image/") === 0) {
+        var file = items[i].getAsFile();
+        if (!file) return;
+        e.preventDefault();
+        processImageFile(file, function (src, w, h) { addImageAt(src, w, h); });
+        return;
+      }
+    }
+    var text = clipboard.getData ? clipboard.getData("text/plain") : "";
+    if (text && text.trim()) {
+      e.preventDefault();
+      var c = viewCenter();
+      addTextAt(text, c.x - 200, c.y - 20);
+    }
+  });
+  // Seret berkas gambar dari File Explorer / galeri HP lalu jatuhkan di papan.
+  stage.addEventListener("dragover", function (e) { e.preventDefault(); });
+  stage.addEventListener("drop", function (e) {
+    e.preventDefault();
+    var files = (e.dataTransfer && e.dataTransfer.files) || [];
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].type.indexOf("image/") === 0) {
+        processImageFile(files[i], function (src, w, h) { addImageAt(src, w, h); });
+        return;
+      }
+    }
+    var text = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+    if (text && text.trim()) { var p = pos(e); addTextAt(text, p.x, p.y); }
+  });
   document.getElementById("clear").addEventListener("click", function () {
     if (!strokes().length) return;
-    if (!window.confirm("Hapus semua coretan di Halaman " + (currentPage + 1) + " ini? Masih bisa diurungkan.")) return;
+    if (!window.confirm("Hapus semua coretan, teks, dan gambar di Halaman " + (currentPage + 1) + " ini? Masih bisa diurungkan.")) return;
     commit([], "Halaman dikosongkan. Tekan Urungkan untuk mengembalikan.");
+    setSelected(null);
   });
   document.getElementById("export").addEventListener("click", function () {
     var out = document.createElement("canvas");
@@ -957,6 +1319,16 @@
     } catch (e) { setStatus("Browser ini tidak mendukung layar penuh."); }
   });
   document.addEventListener("keydown", function (e) {
+    var target = e.target;
+    var typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT");
+    if (!typing && (e.key === "Delete" || e.key === "Backspace") && selectedItem) {
+      e.preventDefault();
+      document.getElementById("delete-selected").click();
+      return;
+    }
+    if (!typing && e.key === "Escape" && selectedItem) { setSelected(null); return; }
+    if (!typing && e.key === "PageDown") { e.preventDefault(); stage.scrollTop += stage.clientHeight * 0.9; return; }
+    if (!typing && e.key === "PageUp") { e.preventDefault(); stage.scrollTop -= stage.clientHeight * 0.9; return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       if (e.shiftKey) document.getElementById("redo").click(); else document.getElementById("undo").click();

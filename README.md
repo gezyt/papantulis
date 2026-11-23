@@ -10,6 +10,24 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
 - Latar polos, kotak-kotak, bergaris, atau titik-titik (persegi tanpa garis, titik hanya di sudut grid 28 px; default: Titik-titik)
 - Urungkan / ulangi (juga Ctrl+Z / Ctrl+Y)
 - Hapus papan (masih bisa diurungkan)
+- **Papan panjang yang bisa digeser ke atas/bawah:** tinggi awal 2400 px
+  (sekitar 2–3 layar), digeser lewat bilah gulir kanan, roda mouse,
+  tombol PageUp/PageDown, atau alat ✋ Geser (seret papan; berguna di
+  layar sentuh/PID yang jarinya biasa dipakai menggambar). Papan
+  memanjang otomatis bila coretan/tempelan mendekati bawah (tombol ⇕
+  juga menambah panjang manual), maks. 9600 px. Ekspor PNG kini
+  mencakup seluruh panjang papan, bukan hanya layar yang terlihat.
+- **Tempel teks & gambar (Ctrl+V):** teks dari clipboard jadi teks di
+  papan (di tengah area yang terlihat), gambar jadi gambar di papan
+  (diperkecil otomatis ke sisi terpanjang 1000 px dan dikompres bila
+  > 800 KB, supaya tidak menghabiskan batas simpan 5 MB). Bisa juga
+  lewat tombol 🔤 Teks (ketuk papan lalu tulis; ketuk teks yang sudah
+  ada untuk mengubahnya), tombol 🖼️ Gambar (pilih berkas), atau
+  seret berkas gambar dari File Explorer/galeri lalu jatuhkan di papan.
+  Alat ↖️ Pindah: seret teks/gambar untuk memindahkannya, ketuk untuk
+  memilih (bingkai putus-putus), Delete/⌫ untuk menghapus. Teks dan
+  gambar ikut tersimpan (lokal + server bila login), bisa diurungkan,
+  dan ikut diekspor PNG.
 - Simpan otomatis di perangkat ini (localStorage)
 - Ekspor PNG (latar putih)
 - **Mode halaman:** bar halaman di atas papan — tombol Halaman 1, 2, …,
@@ -46,7 +64,7 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
 - Endpoint: `POST /api/login`, `POST /api/logout`, `GET /api/me`,
   `GET /api/owner/status` (hanya admin), `GET/POST /api/users` (admin),
   `PATCH/DELETE /api/users/:id` (admin), `POST /api/me/password` (login),
-  `GET/PUT /api/board` (login, papan milik sendiri).
+  `GET/PUT /api/sessions` (login, sesi milik sendiri).
 
 ### Menjalankan lokal
 
@@ -76,10 +94,13 @@ bila pernah tersebar. Database `data/papantulis.db` tidak ikut commit (lihat `.g
 ## Simpan di server (pengguna yang login)
 
 - Satu papan per pengguna, tersimpan di tabel `user_boards` sebagai JSON
-  `{version:2, current, pages}` yang sama dengan format localStorage v2.
-- Endpoint (wajib login): `GET /api/board`, `PUT /api/board`. Validasi
-  server: format v2, maks. 100 halaman, maks. 5000 coretan/halaman, maks.
-  2 MB; tiap pengguna hanya bisa membaca/menulis barisnya sendiri.
+  `{version:3, currentId, sessions}` yang sama dengan format localStorage v3.
+  Tiap halaman berisi goresan, teks `{kind:"text", x, y, text, color, fontSize}`,
+  dan gambar `{kind:"image", x, y, w, h, src}` (src dataURL).
+- Endpoint (wajib login): `GET /api/sessions`, `PUT /api/sessions`. Validasi
+  server: format v3, maks. 20 sesi, maks. 100 halaman/sesi, maks. 5000 butir/halaman,
+  maks. 5 MB total; teks maks. 2000 karakter, gambar dataURL maks. 2 MB/butir;
+  tiap pengguna hanya bisa membaca/menulis barisnya sendiri.
 - Klien: setiap perubahan papan disimpan lokal dulu, lalu disinkronkan ke
   server (debounce ±400 ms, indikator di footer: ☁️ Tersimpan di server).
   Saat dibuka / setelah login: server kosong + lokal berisi -> lokal
@@ -96,6 +117,6 @@ bila pernah tersebar. Database `data/papantulis.db` tidak ikut commit (lihat `.g
   (termasuk mode view-only dan tautan berpassword/kedaluwarsa agar tidak
   bisa divandalisme)
 - Multi-pengguna real-time via WebSocket (pola GezyBoard)
-- Teks, bentuk, dan undo per goresan berbasis model data
+- Undo per goresan berbasis model data
 
 © 2026 GezyTech App · Dikembangkan oleh PakGun · Dilarang menyalin/menduplikat kode tanpa izin tertulis.
