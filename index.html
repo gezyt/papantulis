@@ -60,7 +60,7 @@
   .page-bar { display:flex; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; gap:.4rem; align-items:center; padding:.45rem .75rem; background:#fff; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
   .page-bar > * { flex-shrink:0; }
   .page-bar .page-label { color:#475569; }
-  #stage { position:relative; flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; background:#fff; scrollbar-width:thin; }
+  #stage { position:relative; flex:1; min-height:0; min-width:0; overflow-y:auto; overflow-x:auto; background:#fff; scrollbar-width:thin; }
   /* Papan yang bisa digeser ke atas/bawah: stage adalah wadah gulir,
      isinya #board-wrap setinggi papan (lebih tinggi dari layar), jadi
      bilah gulir kanan, roda mouse, dan alat ✋ Geser semuanya menggeser
@@ -88,6 +88,21 @@
      gulir horizontalnya ditangani bar atas, bukan tiap kelompok. Pemisah
      vertikal menandai batas kelompok Sesi dan Halaman. */
   #topbar { display:flex; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; gap:.75rem; align-items:center; padding:.55rem .75rem; background:var(--bar); border-bottom:1px solid #e2e8f0; }
+  /* PID / layar sempit (<=1600 px): bilah atas membungkus jadi 2 baris
+     supaya semua ikon terlihat tanpa harus menggeser — di PID sentuhan
+     sering meniru mouse sehingga bar yang meluber tidak bisa digeser
+     jari, dan bilah gulirnya pun tipis. Di laptop lebar tetap 1 baris. */
+  @media (max-width:1600px) {
+    #topbar { flex-wrap:wrap; }
+    #topbar .page-bar { border-left:none; padding-left:0; }
+    /* Toolbar boleh menyusut selebar baris supaya isinya membungkus ke
+       bawah, bukan meluber ke kanan (flex-shrink:0 bawaannya mencegah ini). */
+    #topbar .toolbar { margin-left:0; border-left:none; padding-left:0; flex-wrap:wrap; flex-shrink:1; min-width:0; }
+  }
+  /* Layar sentuh: bilah gulir dibuat tebal supaya mudah diraih jari. */
+  @media (pointer:coarse) {
+    #stage, #topbar, .toolbar { scrollbar-width:auto; }
+  }
   #topbar > * { flex-shrink:0; }
   #topbar header { border-bottom:none; padding:0; overflow:visible; }
   #topbar .page-bar { border-bottom:none; padding:0; background:transparent; overflow:visible; border-left:1px solid #e2e8f0; padding-left:.75rem; }
@@ -609,12 +624,12 @@
     var localSessions = sessionsFromLocal();
     if (JSON.stringify(localSessions) === JSON.stringify(serverSessions)) { setServerStatus("☁️ Tersimpan di server"); return; }
     if (isLocalEmpty()) {
-      loadSessions(serverSessions); saveLocalOnly(); renderSessionBar(); renderPageBar(); redraw();
+      loadSessions(serverSessions); saveLocalOnly(); renderSessionBar(); renderPageBar(); resize();
       setServerStatus("☁️ Sesi dari server dimuat"); setStatus("Sesi dari server dimuat.");
       return;
     }
     if (window.confirm((authUserName ? "Sesi di server milik akun " + authUserName + " berbeda dengan sesi di perangkat ini.\n\n" : "Sesi di server berbeda dengan sesi di perangkat ini.\n\n") + "Tekan OK untuk memakai sesi server (sesi di perangkat ini akan diganti).\nTekan Batal untuk menyimpan sesi perangkat ini ke server (sesi server akan diganti).")) {
-      loadSessions(serverSessions); saveLocalOnly(); renderSessionBar(); renderPageBar(); redraw();
+      loadSessions(serverSessions); saveLocalOnly(); renderSessionBar(); renderPageBar(); resize();
       setServerStatus("☁️ Sesi dari server dimuat"); setStatus("Sesi dari server dimuat.");
     } else {
       try { await putSessionsToServer(); setServerStatus("☁️ Tersimpan di server"); }
@@ -654,7 +669,7 @@
     renderSessionBar();
     renderPageBar();
     setStatus("Sesi " + target.name + " dibuka.");
-    redraw();
+    resize();
   }
   function validSessionName(name, exceptId) {
     if (!name) return "Nama sesi tidak boleh kosong.";
@@ -777,16 +792,32 @@
     saveLocal();
     renderPageBar();
     setStatus("Halaman " + (currentPage + 1) + " dari " + pageHistories.length + ".");
-    redraw();
+    resize();
   }
 
+  // Lebar papan mengikuti isi: selebar layar, atau selebar coretan/teks/
+  // gambar paling kanan (maks. 4000 px) — supaya isi yang ditulis di
+  // laptop lebar tetap bisa digeser dan dilihat di layar yang lebih
+  // sempit seperti PID, bukan terpotong di tepi kanan.
+  var boardWidth = 0;
+  function contentExtent() {
+    var maxX = 0;
+    strokes().forEach(function (s) {
+      if (s.kind === "text") maxX = Math.max(maxX, s.x + (s.width || TEXT_MAX_WIDTH));
+      else if (s.kind === "image") maxX = Math.max(maxX, s.x + s.w);
+      else if (s.points) s.points.forEach(function (p) { maxX = Math.max(maxX, p.x); });
+    });
+    return maxX;
+  }
   function resize() {
     var dpr = window.devicePixelRatio || 1;
-    var w = stage.clientWidth;
-    // Lebar mengikuti layar, tinggi mengikuti papan panjang (bukan layar),
-    // supaya coretan di bawah tetap ada saat digeser ke atas.
+    // Lebar mengikuti isi (bukan hanya layar), tinggi mengikuti papan
+    // panjang (bukan layar), supaya coretan di kanan/bawah tetap ada
+    // saat digeser ke kanan atau ke atas.
+    boardWidth = Math.max(stage.clientWidth, Math.min(4000, contentExtent() + 80));
+    boardWrap.style.width = boardWidth + "px";
     boardWrap.style.height = boardHeight + "px";
-    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.width = Math.max(1, Math.round(boardWidth * dpr));
     canvas.height = Math.max(1, Math.round(boardHeight * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     redraw();
@@ -1213,7 +1244,9 @@
     s.index = s.history.length - 1;
     saveLocal();
     setStatus(note || "Tersimpan otomatis di perangkat ini.");
-    redraw();
+    // resize() sekaligus menggambar ulang dan melebarkan papan bila isi
+    // baru melewati tepi kanan (mis. tempelan di area yang terlihat).
+    resize();
   }
 
   function pos(e) {

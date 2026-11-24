@@ -17,6 +17,17 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
   memanjang otomatis bila coretan/tempelan mendekati bawah (tombol ⇕
   juga menambah panjang manual), maks. 9600 px. Ekspor PNG kini
   mencakup seluruh panjang papan, bukan hanya layar yang terlihat.
+- **Papan juga bisa digeser ke kanan/kiri:** lebar papan mengikuti isi
+  (selebar layar, atau selebar isi paling kanan, maks. 4000 px), jadi
+  isi yang ditulis di laptop lebar tetap bisa dilihat di layar yang
+  lebih sempit dengan menggeser papan (bilah gulir bawah atau alat ✋
+  Geser). Ekspor PNG mencakup seluruh lebar papan.
+- **Bilah atas responsif (PID/layar sentuh):** di layar <= 1600 px
+  bilah atas membungkus jadi 2 baris supaya semua ikon terlihat tanpa
+  harus menggeser (di PID sentuhan sering meniru mouse sehingga bar
+  yang meluber tidak bisa digeser jari); di laptop lebar tetap 1 baris
+  seperti sebelumnya. Di layar sentuh bilah gulir dibuat tebal supaya
+  mudah diraih jari.
 - **Tempel teks & gambar (Ctrl+V):** teks dari clipboard jadi teks di
   papan (di tengah area yang terlihat), gambar jadi gambar di papan
   (diperkecil otomatis ke sisi terpanjang 1000 px dan dikompres bila
