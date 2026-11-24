@@ -22,6 +22,12 @@ Papan coretan bebas. Fase ini: coretan satu pengguna + **login pemilik ala GezyB
   isi yang ditulis di laptop lebar tetap bisa dilihat di layar yang
   lebih sempit dengan menggeser papan (bilah gulir bawah atau alat ✋
   Geser). Ekspor PNG mencakup seluruh lebar papan.
+- **Zoom tampilan papan (− / % / + / Pas):** memperkecil/memperbesar
+  tampilan tanpa mengubah ukuran isi yang tersimpan; tombol **Pas**
+  memaskan papan ke lebar layar. Besar tampilan disimpan per perangkat
+  (PID dan laptop bisa beda). Bila belum pernah diatur dan papan lebih
+  lebar dari layar — mis. isi dari laptop lebar dibuka di PID — tampilan
+  langsung dipaskan otomatis saat halaman dibuka.
 - **Bilah atas responsif (PID/layar sentuh):** di layar <= 1600 px
   bilah atas membungkus jadi 2 baris supaya semua ikon terlihat tanpa
   harus menggeser (di PID sentuhan sering meniru mouse sehingga bar

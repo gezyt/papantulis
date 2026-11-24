@@ -66,7 +66,8 @@
      bilah gulir kanan, roda mouse, dan alat ✋ Geser semuanya menggeser
      papan yang sama. Latar digambar di wrap supaya polanya ikut
      memanjang ke bawah, bukan hanya setinggi layar. */
-  #board-wrap { position:relative; width:100%; }
+  #board-wrap { position:relative; width:100%; transform-origin:0 0; }
+  #zoom-label { min-width:3.2em; text-align:center; font-weight:600; font-size:.9rem; }
   #stage.bg-grid, #board-wrap.bg-grid { background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size:28px 28px; }
   #stage.bg-lines, #board-wrap.bg-lines { background-image: repeating-linear-gradient(transparent, transparent 31px, #dbeafe 32px); }
   /* Titik-titik: persegi tanpa garis, titik hanya di sudut/perpotongan grid 28px yang
@@ -200,6 +201,12 @@
     <button type="button" id="edit-text" disabled aria-label="Ubah teks yang dipilih" title="Ubah teks yang dipilih (atau klik dua kali teksnya)">✏️</button>
     <button type="button" id="clear" aria-label="Hapus papan" title="Hapus papan">🗑️</button>
   </div>
+  <div class="group" role="group" aria-label="Ukuran tampilan papan">
+    <button type="button" id="zoom-out" aria-label="Perkecil tampilan" title="Perkecil tampilan papan">−</button>
+    <span id="zoom-label" aria-label="Besar tampilan" title="Besar tampilan papan saat ini">100%</span>
+    <button type="button" id="zoom-in" aria-label="Perbesar tampilan" title="Perbesar tampilan papan">+</button>
+    <button type="button" id="zoom-fit" aria-label="Paskan ke lebar layar" title="Paskan papan ke lebar layar">Pas</button>
+  </div>
   <div class="group">
     <button type="button" id="insert-image" aria-label="Sisipkan gambar" title="Sisipkan gambar dari perangkat (atau tempel gambar dengan Ctrl+V, atau seret berkas gambar ke papan)">🖼️</button>
     <button type="button" id="grow-board" aria-label="Tambah panjang papan" title="Tambah panjang papan ke bawah">⇕</button>
@@ -258,7 +265,7 @@
 </div>
 </div>
 
-<div id="stage" class="bg-dots" title="Gulir dengan roda mouse, bilah gulir di kanan, atau alat ✋ Geser. Tempel teks/gambar dengan Ctrl+V."><div id="board-wrap" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas><textarea id="text-editor" rows="1" aria-label="Ubah teks"></textarea></div></div>
+<div id="stage" class="bg-dots" title="Gulir dengan roda mouse, bilah gulir di kanan, atau alat ✋ Geser. Tempel teks/gambar dengan Ctrl+V. Perbesar/perkecil tampilan dengan tombol − / + / Pas di bilah alat."><div id="board-wrap" class="bg-dots"><canvas id="board" aria-label="Papan coretan"></canvas><textarea id="text-editor" rows="1" aria-label="Ubah teks"></textarea></div></div>
 <input type="file" id="image-file" accept="image/*" hidden>
 
 <footer>
@@ -834,10 +841,34 @@
     var guard = 0;
     while (y > boardHeight - 300 && guard < 8) { if (!growBoard()) break; guard++; }
   }
+  // Zoom tampilan papan (bukan ukuran isi): skala visual saja lewat
+  // transform di #board-wrap, jadi semua koordinat isi, editor teks,
+  // gagang, dan ekspor PNG tidak berubah. Disimpan per perangkat di
+  // localStorage supaya PID dan laptop bisa beda besar tampilan.
+  var zoom = 1;
+  var ZOOM_STEPS = [0.25, 0.35, 0.5, 0.65, 0.8, 1, 1.25, 1.5];
+  var ZOOM_KEY = "papantulis-zoom";
+  function fitZoom() {
+    return Math.max(0.25, Math.min(1, stage.clientWidth / boardWidth));
+  }
+  function applyZoom(z, note, keepScroll) {
+    zoom = Math.max(0.25, Math.min(1.5, z));
+    boardWrap.style.transform = "scale(" + zoom + ")";
+    document.getElementById("zoom-label").textContent = Math.round(zoom * 100) + "%";
+    try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch (e) {}
+    if (!keepScroll) { stage.scrollLeft = 0; stage.scrollTop = 0; }
+    if (note) setStatus(note);
+  }
+  function stepZoom(dir) {
+    var target = zoom;
+    if (dir > 0) { for (var i = 0; i < ZOOM_STEPS.length; i++) if (ZOOM_STEPS[i] > zoom + 0.001) { target = ZOOM_STEPS[i]; break; } }
+    else { for (var j = ZOOM_STEPS.length - 1; j >= 0; j--) if (ZOOM_STEPS[j] < zoom - 0.001) { target = ZOOM_STEPS[j]; break; } }
+    applyZoom(target, "Tampilan papan " + Math.round(target * 100) + "%.", true);
+  }
   function viewCenter() {
     return {
-      x: stage.scrollLeft + stage.clientWidth / 2,
-      y: stage.scrollTop + stage.clientHeight / 2,
+      x: (stage.scrollLeft + stage.clientWidth / 2) / zoom,
+      y: (stage.scrollTop + stage.clientHeight / 2) / zoom,
     };
   }
 
@@ -1251,7 +1282,9 @@
 
   function pos(e) {
     var r = canvas.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pressure || 0.5 };
+    // rect sudah termasuk skala transform; bagi zoom untuk kembali ke
+    // koordinat papan (tempat coretan/teks/gambar disimpan).
+    return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom, p: e.pressure || 0.5 };
   }
 
   canvas.addEventListener("pointerdown", function (e) {
@@ -1509,6 +1542,9 @@
     commit(strokes().filter(function (it) { return it !== selectedItem; }), label + " dihapus. Tekan Urungkan untuk mengembalikan.");
     setSelected(null);
   });
+  document.getElementById("zoom-out").addEventListener("click", function () { stepZoom(-1); });
+  document.getElementById("zoom-in").addEventListener("click", function () { stepZoom(1); });
+  document.getElementById("zoom-fit").addEventListener("click", function () { applyZoom(fitZoom(), "Tampilan dipaskan ke lebar layar."); });
   document.getElementById("grow-board").addEventListener("click", function () {
     if (growBoard()) {
       stage.scrollTop = stage.scrollHeight;
@@ -1666,6 +1702,17 @@
     resizeTimer = setTimeout(resize, 120);
   });
   resize();
+  // Besar tampilan awal: pakai simpanan perangkat ini bila ada; bila
+  // belum pernah diatur dan papan lebih lebar dari layar (mis. isi yang
+  // ditulis di laptop lebar dibuka di PID), langsung dipaskan ke lebar
+  // layar supaya semuanya terlihat tanpa menggeser.
+  (function () {
+    var saved = 0;
+    try { saved = parseFloat(localStorage.getItem(ZOOM_KEY) || "0"); } catch (e) {}
+    if (saved >= 0.25 && saved <= 1.5) applyZoom(saved, null, true);
+    else if (boardWidth > stage.clientWidth) applyZoom(fitZoom(), "Tampilan dipaskan ke lebar layar.");
+    else applyZoom(1, null, true);
+  })();
 })();
 </script>
 </body>
